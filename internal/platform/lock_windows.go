@@ -131,12 +131,14 @@ func processAlive(pid int) bool {
 // lockFileEx is a thin Go binding for Win32 LockFileEx.
 //
 // BOOL LockFileEx(
-//   HANDLE        hFile,             // a1
-//   DWORD         dwFlags,           // a2
-//   DWORD         dwReserved,        // a3
-//   DWORD         nNumberOfBytesToLockLow,   // a4
-//   DWORD         nNumberOfBytesToLockHigh,  // a5
-//   LPOVERLAPPED  lpOverlapped       // a6
+//
+//	HANDLE        hFile,             // a1
+//	DWORD         dwFlags,           // a2
+//	DWORD         dwReserved,        // a3
+//	DWORD         nNumberOfBytesToLockLow,   // a4
+//	DWORD         nNumberOfBytesToLockHigh,  // a5
+//	LPOVERLAPPED  lpOverlapped       // a6
+//
 // );
 //
 // We use Syscall6 with arg count 6; the last slot is the overlapped pointer.
@@ -163,11 +165,13 @@ func lockFileEx(h syscall.Handle, flags, reserved, nLow, nHigh uint32, overlappe
 // syscall.SetFilePointerEx in the standard library.
 //
 // BOOL UnlockFileEx(
-//   HANDLE        hFile,             // a1
-//   DWORD         dwReserved,        // a2  (== 0)
-//   DWORD         nNumberOfBytesToUnlockLow,   // a3
-//   DWORD         nNumberOfBytesToUnlockHigh,  // a4
-//   LPOVERLAPPED  lpOverlapped       // a5
+//
+//	HANDLE        hFile,             // a1
+//	DWORD         dwReserved,        // a2  (== 0)
+//	DWORD         nNumberOfBytesToUnlockLow,   // a3
+//	DWORD         nNumberOfBytesToUnlockHigh,  // a4
+//	LPOVERLAPPED  lpOverlapped       // a5
+//
 // );
 func unlockFileEx(h syscall.Handle, nLow, nHigh uint32, overlapped *syscall.Overlapped) error {
 	_, _, e1 := syscall.Syscall6(
@@ -187,7 +191,7 @@ func unlockFileEx(h syscall.Handle, nLow, nHigh uint32, overlapped *syscall.Over
 }
 
 var (
-	modkernel32     = syscall.NewLazyDLL("kernel32.dll")
-	procLockFileEx  = modkernel32.NewProc("LockFileEx")
+	modkernel32      = syscall.NewLazyDLL("kernel32.dll")
+	procLockFileEx   = modkernel32.NewProc("LockFileEx")
 	procUnlockFileEx = modkernel32.NewProc("UnlockFileEx")
 )

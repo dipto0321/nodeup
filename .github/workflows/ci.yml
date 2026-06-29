@@ -46,13 +46,15 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: 'go.mod'
+          go-version: '1.24'
           cache: true
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          # Pin golangci-lint to a version built against Go >= 1.24.
+          # When go.mod's `go` directive advances, bump this accordingly.
+          version: v1.64.8
           args: --timeout=5m
 
       - name: commitlint

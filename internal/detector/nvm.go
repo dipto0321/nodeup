@@ -18,9 +18,9 @@ func NewNVM() *NVM { return &NVM{} }
 
 func (n *NVM) Name() string { return "nvm" }
 
-func (n *NVM) Detect() bool                              { return false }
+func (n *NVM) Detect() bool                             { return false }
 func (n *NVM) Version() (string, error)                 { return "", nil }
-func (n *NVM) ListInstalled() ([]semver.Version, error)  { return nil, nil }
+func (n *NVM) ListInstalled() ([]semver.Version, error) { return nil, nil }
 func (n *NVM) Install(v semver.Version) error           { return nil }
 func (n *NVM) Uninstall(v semver.Version) error         { return nil }
 func (n *NVM) Use(v semver.Version) error               { return nil }

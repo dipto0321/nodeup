@@ -24,8 +24,9 @@ BUILD_DIR := bin
 COVERAGE_FILE := coverage.out
 COVERAGE_HTML := coverage.html
 
-# Go version pinning — matches .github/workflows/ci.yml.
-GO_VERSION ?= 1.22
+# Go version pinning — matches the `go` directive in go.mod and
+# .github/workflows/ci.yml. Bump all three together when upgrading.
+GO_VERSION ?= 1.24
 
 .PHONY: help
 help: ## Show this help message

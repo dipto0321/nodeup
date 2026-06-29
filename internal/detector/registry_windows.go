@@ -18,7 +18,7 @@ func NewNVMWindows() *NVMWindows { return &NVMWindows{} }
 func (n *NVMWindows) Name() string { return "nvm-windows" }
 
 func (n *NVMWindows) Detect() bool                             { return false }
-func (n *NVMWindows) Version() (string, error)                { return "", nil }
+func (n *NVMWindows) Version() (string, error)                 { return "", nil }
 func (n *NVMWindows) ListInstalled() ([]semver.Version, error) { return nil, nil }
 func (n *NVMWindows) Install(v semver.Version) error           { return nil }
 func (n *NVMWindows) Uninstall(v semver.Version) error         { return nil }

@@ -18,12 +18,12 @@ func NewASDF() *ASDF { return &ASDF{} }
 func (a *ASDF) Name() string { return "asdf" }
 
 func (a *ASDF) Detect() bool                             { return false }
-func (a *ASDF) Version() (string, error)                { return "", nil }
+func (a *ASDF) Version() (string, error)                 { return "", nil }
 func (a *ASDF) ListInstalled() ([]semver.Version, error) { return nil, nil }
-func (a *ASDF) Install(ver semver.Version) error        { return nil }
-func (a *ASDF) Uninstall(ver semver.Version) error      { return nil }
-func (a *ASDF) Use(ver semver.Version) error            { return nil }
-func (a *ASDF) SetDefault(ver semver.Version) error     { return nil }
+func (a *ASDF) Install(ver semver.Version) error         { return nil }
+func (a *ASDF) Uninstall(ver semver.Version) error       { return nil }
+func (a *ASDF) Use(ver semver.Version) error             { return nil }
+func (a *ASDF) SetDefault(ver semver.Version) error      { return nil }
 func (a *ASDF) GlobalNpmPrefix(ver semver.Version) (string, error) {
 	return "", nil
 }
