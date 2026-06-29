@@ -83,7 +83,12 @@ jobs:
           cache: true
 
       - name: Run tests
-        run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+        shell: bash
+        run: |
+          go test -race \
+            -coverprofile coverage.txt \
+            -covermode atomic \
+            ./...
 
       - name: Upload coverage
         if: matrix.os == 'ubuntu-latest'
@@ -119,6 +124,7 @@ jobs:
           cache: true
 
       - name: Build
+        shell: bash
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
