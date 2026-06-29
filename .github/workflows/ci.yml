@@ -60,7 +60,9 @@ jobs:
       - name: commitlint
         uses: wagoid/commitlint-github-action@v5
         with:
-          config-file: .commitlintrc.yml
+          # NOTE: input name is camelCase `configFile`, not kebab-case.
+          # The wrong name silently falls back to the action's defaults.
+          configFile: .commitlintrc.yml
         env:
           # GITHUB_TOKEN is needed for the action to fetch PR commits
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -32,3 +32,10 @@ Thumbs.db
 *~
 .tmp/
 .tools/
+
+# Node — only used for commitlint local validation. CI runs commitlint
+# via wagoid/commitlint-github-action (a Docker action) so we don't
+# need a package.json. Developers running `npx commitlint` locally
+# install into a throwaway node_modules.
+node_modules/
+package-lock.json

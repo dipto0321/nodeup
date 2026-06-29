@@ -28,6 +28,7 @@ rules:
       - release
       - ci
       - docs
+      - lint
   # Type whitelist matches nodeup.md §12 exactly.
   type-enum:
     - 2
@@ -43,21 +44,33 @@ rules:
       - ci
       - chore
       - revert
-  # Subject must be <= 72 chars (conventional commit norm).
+  # Subject must be <= 100 chars (matches @commitlint/config-conventional
+# default and the GitHub web UI's truncation point at ~72 chars on the
+# timeline but full visibility at 100 in the commit-detail view).
   header-max-length:
     - 2
     - always
-    - 72
-  # Lowercase subject after the type(scope): prefix.
+    - 100
+  # Subject case: forbid capitalized sentence-style and PascalCase / UPPERCASE.
+# Inherits the conventional-commits default (the negated "must NOT be"
+# rule). Plain lowercase is fine, but so is "My thing" — this is the
+# canonical pattern and matches every commit we've made so far.
   subject-case:
     - 2
-    - always
-    - lowercase
+    - never
+    - - sentence-case
+      - start-case
+      - pascal-case
+      - upper-case
   # No trailing period on subject — conventional commits norm.
+  # NOTE: the rule tuple is `[level, when, value]` where `value` is the
+  # character to check for (default "."). To forbid trailing periods,
+  # set `when: never` and `value: "."`. The historical gotcha is that
+  # the string "never" is the *when* argument, NOT the value.
   subject-full-stop:
     - 2
-    - always
     - never
+    - '.'
   # Body lines wrap at 100 cols.
   body-max-line-length:
     - 2
