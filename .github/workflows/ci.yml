@@ -25,6 +25,11 @@ on:
 
 permissions:
   contents: read
+  # commitlint-github-action@v5 reads the PR's commit list via the
+  # GitHub API; `pull-requests: read` is required for that. Without it
+  # the action crashes with "Resource not accessible by integration"
+  # (covered by PR #1's lint failure).
+  pull-requests: read
 
 # Cancel in-progress runs for the same branch / PR when a new commit
 # is pushed. Saves CI minutes.
