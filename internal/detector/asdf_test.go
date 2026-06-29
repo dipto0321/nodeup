@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -444,18 +445,35 @@ func TestASDF_MutationMethods_NotImplemented(t *testing.T) {
 }
 
 func TestASDF_DoesNotInvokeRunShellOnDetect(t *testing.T) {
-	// Defence-in-depth: a follow-up to the per-Detect test above.
+	// Defense-in-depth: a follow-up to the per-Detect test above.
 	// Even on the "everything works" path (binary on PATH), Detect
 	// must not call runShell. We exercise both the "PATH hit" and
 	// "dir hit" branches by setting PATH to a temp dir that
 	// contains a real "asdf" file, and verify no shell call.
+	//
+	// We REPLACE PATH with a single entry (the temp dir) rather
+	// than prepending — on Windows some GitHub Actions images ship
+	// with an asdf / asdf-vm-related binary already on PATH, which
+	// would make this test pre-empt our stub binary. A clean PATH
+	// guarantees the only "asdf" on the search path is our stub.
 	binDir := t.TempDir()
-	bin := filepath.Join(binDir, "asdf")
+	// Windows exec.LookPath requires a ".exe" suffix to find an
+	// executable; the unadorned "asdf" works on unix. Use the
+	// platform-correct filename so the test runs identically on
+	// linux, macOS, and Windows.
+	binName := "asdf"
+	if runtime.GOOS == "windows" {
+		binName = "asdf.exe"
+	}
+	bin := filepath.Join(binDir, binName)
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Prepend our bin dir to PATH so exec.LookPath("asdf") finds it.
-	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	// Set PATH to ONLY our bin dir. exec.LookPath walks PATH
+	// itself, so a single-entry PATH is sufficient and removes
+	// any chance of a stray asdf binary elsewhere on the runner
+	// shadowing our stub.
+	t.Setenv("PATH", binDir)
 
 	orig := runShell
 	called := false
