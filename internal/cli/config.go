@@ -4,7 +4,6 @@ import "github.com/spf13/cobra"
 
 // newConfigCmd is a stub for Phase 0. It will be implemented in Phase 5.
 //
-// See nodeup.md §9 (CLI Design — nodeup config set/get/show).
 // The config file lives at ~/.nodeup/config.yaml and stores the manager
 // preference, tracked channels, migration strategy, cleanup policy,
 // and cache TTL.

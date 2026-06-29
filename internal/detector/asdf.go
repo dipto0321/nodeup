@@ -15,7 +15,8 @@ import (
 )
 
 // ASDF is the asdf-vm implementation (https://asdf-vm.com) with the
-// nodejs plugin installed. See nodeup.md §5 for the detection strategy.
+// nodejs plugin installed. See internal/detector/detector.go for the
+// Manager interface contract.
 //
 // ASDF is a true binary (unlike NVM). Its installed Node versions are
 // queryable via `asdf list nodejs`, which is more reliable than parsing

@@ -30,7 +30,8 @@ import (
 var ErrNoManager = errors.New("no Node.js version manager detected")
 
 // Manager is the abstraction every concrete manager implementation
-// satisfies. See nodeup.md §5 for the full contract.
+// satisfies. See the doc comments on individual Manager methods for
+// the full contract.
 type Manager interface {
 	// Name returns the canonical short name: "fnm", "nvm", "volta", ...
 	Name() string

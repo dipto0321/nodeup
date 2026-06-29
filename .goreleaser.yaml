@@ -16,8 +16,6 @@
 #   - A GitHub Release titled `v<version>` with changelog and all artifacts
 #   - A homebrew formula pushed to github.com/dipto0321/homebrew-tap
 #   - A scoop manifest pushed to github.com/dipto0321/scoop-bucket
-#
-# See nodeup.md §15 for the rationale behind these choices.
 
 version: 2
 

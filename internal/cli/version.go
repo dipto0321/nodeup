@@ -11,7 +11,7 @@ import (
 //
 // It prints the version, git commit, build date, and runtime info (Go
 // version, OS, architecture). The --check flag is reserved for a future
-// self-update mechanism (out of scope for v1.0.0 per nodeup.md §3).
+// self-update mechanism (out of scope for v1.0.0).
 func newVersionCmd(version, commit, date string) *cobra.Command {
 	var check bool
 
@@ -33,7 +33,7 @@ Example:
 			fmt.Fprintf(out, "  platform:   %s/%s\n", runtime.GOOS, runtime.GOARCH)
 
 			if check {
-				// Self-update is a v2 feature (see nodeup.md §3 "Out of Scope").
+				// Self-update is a v2 feature — out of scope for v1.
 				// We intentionally do nothing here but make the flag a
 				// no-op rather than failing, so user scripts that pre-set
 				// the flag don't break.

@@ -15,8 +15,9 @@ import (
 )
 
 // NVM is the Node Version Manager implementation. nvm is unusual because
-// it is a SHELL FUNCTION, not a binary. See nodeup.md §5 "The nvm Special
-// Case" for the three strategies we use.
+// it is a SHELL FUNCTION, not a binary — NVM is a shell function
+// wrapper around the real `nvm` script, so we must source it before
+// running any subcommand.
 //
 // Strategy C is used for reads (parse ~/.nvm/versions/node/* directly).
 // For mutating operations (install, uninstall, use) we will fall back to
