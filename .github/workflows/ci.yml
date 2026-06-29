@@ -46,13 +46,13 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version-file: 'go.mod'
           cache: true
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v4
+        uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.55.2
+          version: latest
           args: --timeout=5m
 
       - name: commitlint
@@ -71,7 +71,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        go: ['1.22']
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -79,7 +78,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go }}
+          go-version-file: 'go.mod'
           cache: true
 
       - name: Run tests
@@ -120,7 +119,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version-file: 'go.mod'
           cache: true
 
       - name: Build

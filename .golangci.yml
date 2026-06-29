@@ -24,7 +24,7 @@ run:
   timeout: 5m
   tests: true
   # Skip the auto-generated docs/ and .puku/ folders.
-  skip-dirs:
+  exclude-dirs:
     - docs
     - dist
     - vendor
