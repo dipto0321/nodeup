@@ -1,0 +1,447 @@
+package detector
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/Masterminds/semver/v3"
+
+	"github.com/dipto0321/nodeup/internal/platform"
+)
+
+// fakeEntry is a minimal os.DirEntry implementation for tests. The real
+// os.ReadDir returns *os.DirEntry-of-fs.FileInfo, but constructing those
+// by hand is verbose; this stub lets us hand a canned list of names +
+// IsDir flag to parseNVMInstalledEntries.
+type fakeEntry struct {
+	name  string
+	isDir bool
+}
+
+func (f fakeEntry) Name() string               { return f.name }
+func (f fakeEntry) IsDir() bool                { return f.isDir }
+func (f fakeEntry) Type() os.FileMode          { return modeFromIsDir(f.isDir) }
+func (f fakeEntry) Info() (os.FileInfo, error) { return nil, os.ErrNotExist }
+
+// modeFromIsDir turns a bool into a FileMode bitmask. Used for Type(),
+// which some os.DirEntry consumers call instead of IsDir().
+func modeFromIsDir(d bool) os.FileMode {
+	if d {
+		return os.ModeDir
+	}
+	return 0
+}
+
+// withStubListDir swaps the package-level listDir var for the duration
+// of one test, returning a cleanup hook via t.Cleanup. The stub ignores
+// the path argument and always returns the supplied entries; tests that
+// care about the path should assert on the helper's own bookkeeping.
+func withStubListDir(t *testing.T, entries []os.DirEntry, err error) {
+	t.Helper()
+	orig := listDir
+	listDir = func(string) ([]os.DirEntry, error) {
+		return entries, err
+	}
+	t.Cleanup(func() { listDir = orig })
+}
+
+// withStubScript swaps the package-level runScript var for the duration
+// of one test. The stub returns the supplied stdout and nil error,
+// unless err is non-nil. It also captures the script that was passed
+// in, which lets tests assert it contains the expected invocation
+// (e.g. "nvm --version").
+func withStubScript(t *testing.T, stdout string, err error) *scriptRecorder {
+	t.Helper()
+	orig := runScript
+	rec := &scriptRecorder{}
+	runScript = func(_ context.Context, script string) (*platform.RunResult, error) {
+		rec.script = script
+		return &platform.RunResult{Stdout: stdout, Stderr: "", ExitCode: 0}, err
+	}
+	t.Cleanup(func() { runScript = orig })
+	return rec
+}
+
+// scriptRecorder captures the most recent script passed to runScript.
+// Used to assert that Version() builds the expected shell command.
+type scriptRecorder struct {
+	script string
+}
+
+// --- parseNVMVersion ----------------------------------------------------
+
+func TestParseNVMVersion_BareVersion(t *testing.T) {
+	got, err := parseNVMVersion("0.40.5\n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "0.40.5" {
+		t.Errorf("got %q, want %q", got, "0.40.5")
+	}
+}
+
+func TestParseNVMVersion_WithPrefix(t *testing.T) {
+	// Older nvm versions print "nvm 0.39.7".
+	got, err := parseNVMVersion("nvm 0.39.7\n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "0.39.7" {
+		t.Errorf("got %q, want %q", got, "0.39.7")
+	}
+}
+
+func TestParseNVMVersion_TrimsWhitespace(t *testing.T) {
+	got, err := parseNVMVersion("   0.40.5   \n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "0.40.5" {
+		t.Errorf("got %q, want %q", got, "0.40.5")
+	}
+}
+
+func TestParseNVMVersion_Empty(t *testing.T) {
+	_, err := parseNVMVersion("")
+	if err == nil {
+		t.Error("expected error on empty input")
+	}
+}
+
+func TestParseNVMVersion_WhitespaceOnly(t *testing.T) {
+	_, err := parseNVMVersion("   \n\t  ")
+	if err == nil {
+		t.Error("expected error on whitespace-only input")
+	}
+}
+
+// --- parseNVMInstalledEntries -------------------------------------------
+
+func TestParseNVMInstalledEntries_StandardLayout(t *testing.T) {
+	// Real nvm layout: directory entries named "vX.Y.Z".
+	entries := []os.DirEntry{
+		fakeEntry{name: "v18.14.0", isDir: true},
+		fakeEntry{name: "v16.19.0", isDir: true},
+		fakeEntry{name: "v19.6.0", isDir: true},
+	}
+	got, err := parseNVMInstalledEntries(entries)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"16.19.0", "18.14.0", "19.6.0"}
+	if len(got) != len(want) {
+		t.Fatalf("got %d versions, want %d", len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i].String() != w {
+			t.Errorf("version[%d] = %q, want %q", i, got[i].String(), w)
+		}
+	}
+}
+
+func TestParseNVMInstalledEntries_AcceptsBareVersions(t *testing.T) {
+	// Some installs drop the v prefix.
+	entries := []os.DirEntry{
+		fakeEntry{name: "18.14.0", isDir: true},
+		fakeEntry{name: "16.19.0", isDir: true},
+	}
+	got, err := parseNVMInstalledEntries(entries)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d versions, want 2", len(got))
+	}
+	if got[0].String() != "16.19.0" || got[1].String() != "18.14.0" {
+		t.Errorf("sort order wrong: %v", got)
+	}
+}
+
+func TestParseNVMInstalledEntries_SkipsSystem(t *testing.T) {
+	entries := []os.DirEntry{
+		fakeEntry{name: "system", isDir: true},
+		fakeEntry{name: "v18.14.0", isDir: true},
+	}
+	got, err := parseNVMInstalledEntries(entries)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 version, got %d", len(got))
+	}
+	if got[0].String() != "18.14.0" {
+		t.Errorf("got %q, want 18.14.0", got[0].String())
+	}
+}
+
+func TestParseNVMInstalledEntries_SkipsNonDirs(t *testing.T) {
+	// nvm sometimes leaves a "lts" symlink or other files in this dir.
+	entries := []os.DirEntry{
+		fakeEntry{name: "v18.14.0", isDir: true},
+		fakeEntry{name: "lts", isDir: false},
+		fakeEntry{name: ".DS_Store", isDir: false},
+	}
+	got, err := parseNVMInstalledEntries(entries)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 version, got %d", len(got))
+	}
+}
+
+func TestParseNVMInstalledEntries_SkipsUnparseable(t *testing.T) {
+	entries := []os.DirEntry{
+		fakeEntry{name: "v18.14.0", isDir: true},
+		fakeEntry{name: "weird-name", isDir: true},
+	}
+	got, err := parseNVMInstalledEntries(entries)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 version, got %d", len(got))
+	}
+}
+
+func TestParseNVMInstalledEntries_Empty(t *testing.T) {
+	got, err := parseNVMInstalledEntries(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got == nil {
+		t.Error("expected non-nil empty slice")
+	}
+	if len(got) != 0 {
+		t.Errorf("expected 0 versions, got %d", len(got))
+	}
+}
+
+func TestParseNVMInstalledEntries_OnlySystem(t *testing.T) {
+	entries := []os.DirEntry{
+		fakeEntry{name: "system", isDir: true},
+	}
+	got, err := parseNVMInstalledEntries(entries)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got == nil {
+		t.Error("expected non-nil empty slice (only-system case)")
+	}
+	if len(got) != 0 {
+		t.Errorf("expected 0 versions, got %d", len(got))
+	}
+}
+
+// --- NVM.Name -----------------------------------------------------------
+
+func TestNVM_Name(t *testing.T) {
+	if got := NewNVM().Name(); got != "nvm" {
+		t.Errorf("got %q, want %q", got, "nvm")
+	}
+}
+
+// --- NVM.Detect ---------------------------------------------------------
+
+// withStubNVMScript creates a real on-disk nvm.sh file in a temp dir
+// and points NVM_DIR at it. This is the cleanest way to test Detect:
+// the production code reads nvm.sh via os.Stat, and stubbing os.Stat
+// would be heavier than just writing a one-line file.
+func withStubNVMScript(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	// nvm.sh is a real shell script; an empty file is enough to satisfy
+	// the existence check. The contents are not sourced in Detect.
+	if err := os.WriteFile(filepath.Join(dir, "nvm.sh"), []byte("# stub nvm\n"), 0o644); err != nil {
+		t.Fatalf("write nvm.sh: %v", err)
+	}
+	t.Setenv("NVM_DIR", dir)
+	t.Cleanup(func() { t.Setenv("NVM_DIR", "") })
+}
+
+func TestNVM_Detect_TrueWhenNVMScriptExists(t *testing.T) {
+	withStubNVMScript(t)
+	if !NewNVM().Detect() {
+		t.Error("Detect returned false with nvm.sh present")
+	}
+}
+
+func TestNVM_Detect_FalseWhenNoNVMScript(t *testing.T) {
+	// Point NVM_DIR at an empty temp dir — no nvm.sh inside.
+	t.Setenv("NVM_DIR", t.TempDir())
+	// And make sure HOME-based fallback doesn't accidentally find a
+	// real install. t.TempDir() lives under os.TempDir() which is not
+	// $HOME, so the ~/.nvm fallback will hit a path that doesn't
+	// exist on the test machine (unless the developer happens to have
+	// ~/.nvm — and on CI runners it won't). We accept that small risk
+	// in exchange for test simplicity.
+	if NewNVM().Detect() {
+		// Only fail if HOME-based fallback would have found something.
+		// Check by computing the fallback path and seeing if it exists.
+		home, err := os.UserHomeDir()
+		if err != nil {
+			t.Fatalf("Detect returned true unexpectedly: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(home, ".nvm", "nvm.sh")); err == nil {
+			t.Skip("developer has ~/.nvm/nvm.sh; cannot test the negative case")
+		}
+		t.Error("Detect returned true with no nvm.sh")
+	}
+}
+
+// --- NVM.Version -------------------------------------------------------
+
+func TestNVM_Version_BareOutput(t *testing.T) {
+	withStubNVMScript(t)
+	rec := withStubScript(t, "0.40.5\n", nil)
+
+	got, err := NewNVM().Version()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "0.40.5" {
+		t.Errorf("got %q, want %q", got, "0.40.5")
+	}
+	// Sanity: the script we built should source nvm.sh and call nvm --version.
+	if !strings.Contains(rec.script, "nvm --version") {
+		t.Errorf("script missing nvm --version: %q", rec.script)
+	}
+	if !strings.Contains(rec.script, "source ") {
+		t.Errorf("script missing source command: %q", rec.script)
+	}
+}
+
+func TestNVM_Version_PropagatesScriptError(t *testing.T) {
+	withStubNVMScript(t)
+	withStubScript(t, "", errSentinelForTest)
+
+	_, err := NewNVM().Version()
+	if err == nil {
+		t.Fatal("expected error when runScript fails")
+	}
+}
+
+func TestNVM_Version_NoNVMScript(t *testing.T) {
+	// NVM_DIR pointing at an empty temp dir.
+	t.Setenv("NVM_DIR", t.TempDir())
+	if _, err := NewNVM().Version(); err == nil {
+		t.Error("expected error when nvm cannot be located")
+	}
+}
+
+// --- NVM.ListInstalled -------------------------------------------------
+
+func TestNVM_ListInstalled_HappyPath(t *testing.T) {
+	withStubNVMScript(t)
+	withStubListDir(t, []os.DirEntry{
+		fakeEntry{name: "v18.14.0", isDir: true},
+		fakeEntry{name: "v16.19.0", isDir: true},
+		fakeEntry{name: "v19.6.0", isDir: true},
+	}, nil)
+
+	got, err := NewNVM().ListInstalled()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"16.19.0", "18.14.0", "19.6.0"}
+	if len(got) != len(want) {
+		t.Fatalf("got %d versions, want %d", len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i].String() != w {
+			t.Errorf("version[%d] = %q, want %q", i, got[i].String(), w)
+		}
+	}
+}
+
+func TestNVM_ListInstalled_NotFoundReturnsEmpty(t *testing.T) {
+	withStubNVMScript(t)
+	// Simulate "nvm installed, never installed a node" by returning
+	// os.ErrNotExist from the stub.
+	withStubListDir(t, nil, os.ErrNotExist)
+
+	got, err := NewNVM().ListInstalled()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got == nil {
+		t.Error("expected non-nil empty slice")
+	}
+	if len(got) != 0 {
+		t.Errorf("expected 0 versions, got %d", len(got))
+	}
+}
+
+func TestNVM_ListInstalled_PropagatesOtherError(t *testing.T) {
+	withStubNVMScript(t)
+	withStubListDir(t, nil, errSentinelForTest)
+
+	_, err := NewNVM().ListInstalled()
+	if err == nil {
+		t.Fatal("expected error when listDir fails with non-NotExist")
+	}
+}
+
+func TestNVM_ListInstalled_NoNVMDir(t *testing.T) {
+	// NVM_DIR empty AND home is unresolvable. We force the latter by
+	// setting HOME="" on unix. On Windows the equivalent is USERPROFILE.
+	t.Setenv("NVM_DIR", "")
+	if platform.IsWindows() {
+		t.Setenv("USERPROFILE", "")
+	} else {
+		t.Setenv("HOME", "")
+	}
+	_, err := NewNVM().ListInstalled()
+	if err == nil {
+		t.Error("expected error when NVM_DIR and HOME both empty")
+	}
+}
+
+// --- Mutation stubs ----------------------------------------------------
+
+func TestNVM_MutationMethodsReturnErrNVMNotImplemented(t *testing.T) {
+	n := NewNVM()
+	// semver.MustParse returns *semver.Version; the Manager interface
+	// declares value receivers so we deref at the call site.
+	v := *semver.MustParse("20.0.0")
+
+	tests := []struct {
+		name string
+		fn   func() error
+	}{
+		{"Install", func() error { return n.Install(v) }},
+		{"Uninstall", func() error { return n.Uninstall(v) }},
+		{"Use", func() error { return n.Use(v) }},
+		{"SetDefault", func() error { return n.SetDefault(v) }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.fn()
+			if err == nil {
+				t.Fatalf("%s returned nil, want ErrNVMNotImplemented", tc.name)
+			}
+			if !errors.Is(err, ErrNVMNotImplemented) {
+				t.Errorf("%s returned %v, want errors.Is(_, ErrNVMNotImplemented)", tc.name, err)
+			}
+		})
+	}
+}
+
+func TestNVM_GlobalNpmPrefixReturnsErrNVMNotImplemented(t *testing.T) {
+	n := NewNVM()
+	v := *semver.MustParse("20.0.0")
+	_, err := n.GlobalNpmPrefix(v)
+	if !errors.Is(err, ErrNVMNotImplemented) {
+		t.Errorf("got %v, want errors.Is(_, ErrNVMNotImplemented)", err)
+	}
+}
+
+// --- helpers ------------------------------------------------------------
+
+// errSentinelForTest is the error returned by stubs to verify error
+// propagation. It is a plain errors.New sentinel.
+var errSentinelForTest = errors.New("simulated shell failure")
