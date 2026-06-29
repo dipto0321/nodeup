@@ -1,6 +1,9 @@
 # Release Checklist
 
-> _Placeholder doc. Final content lands in Phase 8._
+The release pipeline (`.github/workflows/release.yml` + GoReleaser v2)
+fires automatically on a `v*.*.*` tag push. This checklist is the
+human-side companion — use it for the **first stable release** (v1.0.0),
+and ad-hoc when shipping a patch release.
 
 ## Pre-release (on `chore/release/vX.Y.Z` branch)
 

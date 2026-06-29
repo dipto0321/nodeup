@@ -1,7 +1,9 @@
 # Installation
 
-> _Placeholder doc. Full content lands in Phase 7 alongside the
-> distribution pipeline (GoReleaser + Homebrew + Scoop + npm wrapper)._
+All five channels below are wired up and tested. The GoReleaser config
+that produces the binary archives lives in `.goreleaser.yaml`; the
+Homebrew tap formula and Scoop bucket manifest are pushed
+automatically on every `v*.*.*` tag (see `.github/workflows/release.yml`).
 
 ## Supported platforms
 
