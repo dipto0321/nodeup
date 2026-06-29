@@ -1,0 +1,131 @@
+# CI workflow for nodeup.
+#
+# Runs on every push to main and every pull request. Three jobs:
+#
+#   1. lint       — golangci-lint with .golangci.yml + commitlint on the PR
+#                   commits. We keep lint separate from test so a lint
+#                   flake doesn't hide test results.
+#   2. test       — go test ./... across linux/macos/windows matrix with
+#                   the race detector and coverage. Coverage is uploaded
+#                   to Codecov (if a token is configured).
+#   3. build      — go build for every supported GOOS/GOARCH. Catches
+#                   platform-specific build errors that the test matrix
+#                   would miss (e.g., Windows-only files referencing a
+#                   linux-only symbol via a build-tag mistake).
+#
+# See .github/workflows/release.yml for the tag-triggered release flow.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Cancel in-progress runs for the same branch / PR when a new commit
+# is pushed. Saves CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history for commitlint
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: v1.55.2
+          args: --timeout=5m
+
+      - name: commitlint
+        uses: wagoid/commitlint-github-action@v5
+        with:
+          config-file: .commitlintrc.yml
+        env:
+          # GITHUB_TOKEN is needed for the action to fetch PR commits
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go: ['1.22']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+
+      - name: Run tests
+        run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest'
+        uses: codecov/codecov-action@v4
+        with:
+          file: coverage.txt
+          flags: unittests
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  build:
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux,   goarch: amd64 }
+          - { goos: linux,   goarch: arm64 }
+          - { goos: darwin,  goarch: amd64 }
+          - { goos: darwin,  goarch: arm64 }
+          - { goos: windows, goarch: amd64 }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p dist
+          out=dist/nodeup
+          if [ "$GOOS" = "windows" ]; then out=dist/nodeup.exe; fi
+          go build -trimpath -ldflags "-s -w" -o "$out" ./cmd/nodeup
+          ls -la dist/

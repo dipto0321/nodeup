@@ -1,0 +1,83 @@
+# golangci-lint configuration for nodeup.
+#
+# We run golangci-lint with this file in CI (see .github/workflows/ci.yml)
+# and recommend developers run it locally via `make lint`.
+#
+# The defaults below are intentionally pragmatic:
+#   - errcheck: catches unchecked errors. We treat these as bugs.
+#   - govet: standard static checks.
+#   - staticcheck: a curated set of additional checks (formerly part of
+#     honnef.co/go/tools).
+#   - unused: catches unused vars/funcs/types.
+#   - gosimple: suggests simplifications.
+#   - ineffassign: catches assignments whose result is never used.
+#   - gocritic: opinionated extra checks (kept light to avoid noise).
+#   - gofmt / goimports: format consistency.
+#
+# Linters we DELIBERATELY do not enable yet:
+#   - revive / golint: superseded by staticcheck's style checks.
+#   - stylecheck: too noisy at this stage.
+#   - exhaustive: useful but noisy for switch statements over manager names.
+#   - funlen / cyclomatic: more useful once the code has stabilized.
+
+run:
+  timeout: 5m
+  tests: true
+  # Skip the auto-generated docs/ and .puku/ folders.
+  skip-dirs:
+    - docs
+    - dist
+    - vendor
+    - nodeup-npm
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - gocritic
+    - misspell
+    - bodyclose
+    - contextcheck
+
+linters-settings:
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+      - performance
+    disabled-checks:
+      - ifElseChain   # too noisy on early-return patterns
+      - hugeParam     # not relevant yet
+  misspell:
+    locale: US
+  goimports:
+    local-prefixes: github.com/dipto0321/nodeup
+
+issues:
+  # Don't bail out on first failure — show all problems.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  # Exclude generated files from lint checks.
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - errcheck      # unchecked errors in test helpers are fine
+        - gocritic
+    - path: internal/detector/.*_windows\.go
+      linters:
+        - unused        # windows-only symbols appear unused on linux runners
+
+# Output configuration.
+output:
+  formats:
+    - format: colored-line-number
+      path: stdout
+  print-issued-lines: true
+  print-linter-name: true

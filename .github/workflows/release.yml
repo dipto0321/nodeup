@@ -1,0 +1,67 @@
+# Release workflow for nodeup.
+#
+# Triggered ONLY on `v*.*.*` tag push (annotated or lightweight). Steps:
+#
+#   1. Checkout at full depth so GoReleaser can read every commit.
+#   2. Set up Go with the same version pin as CI.
+#   3. Run `goreleaser release --clean` which:
+#        - Builds all 6 platform binaries (linux/darwin/windows × amd64/arm64)
+#        - Generates SHA256 checksums
+#        - Creates a GitHub Release with an auto-generated changelog
+#        - Pushes to the homebrew-tap repo (if HOMEBREW_TAP_TOKEN is set)
+#        - Pushes to the scoop-bucket repo (if SCOOP_BUCKET_TOKEN is set)
+#
+# Required secrets (configured per-repo):
+#   - HOMEBREW_TAP_TOKEN: fine-grained PAT with `contents:write` on
+#     github.com/dipto0321/homebrew-tap
+#   - SCOOP_BUCKET_TOKEN: same on github.com/dipto0321/scoop-bucket
+#   - GITHUB_TOKEN: provided automatically by GitHub Actions, used by
+#     GoReleaser to create the Release.
+#
+# Optional secrets:
+#   - NPM_TOKEN: if set, release.yml will additionally publish the
+#     `nodeup` npm wrapper. Configure the publish step after the GoReleaser
+#     step (currently a placeholder; full npm wrapper lives in
+#     nodeup-npm/ in Phase 7).
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write # required to create the GitHub Release
+
+# Don't cancel a release mid-publish — partial state is bad.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  goreleaser:
+    name: GoReleaser
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}

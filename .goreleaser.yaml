@@ -1,0 +1,132 @@
+# GoReleaser v2 configuration for nodeup.
+#
+# Inputs (from environment):
+#   GITHUB_TOKEN           — provided by GitHub Actions
+#   HOMEBREW_TAP_TOKEN     — provided by GitHub Actions (per-repo secret)
+#   SCOOP_BUCKET_TOKEN     — provided by GitHub Actions (per-repo secret)
+#
+# Outputs:
+#   - 6 single-binary archives in dist/:
+#       nodeup_<version>_linux_amd64.tar.gz
+#       nodeup_<version>_linux_arm64.tar.gz
+#       nodeup_<version>_darwin_amd64.tar.gz
+#       nodeup_<version>_darwin_arm64.tar.gz
+#       nodeup_<version>_windows_amd64.zip
+#   - checksums.txt with SHA256 for every artifact
+#   - A GitHub Release titled `v<version>` with changelog and all artifacts
+#   - A homebrew formula pushed to github.com/dipto0321/homebrew-tap
+#   - A scoop manifest pushed to github.com/dipto0321/scoop-bucket
+#
+# See nodeup.md §15 for the rationale behind these choices.
+
+version: 2
+
+project_name: nodeup
+
+before:
+  hooks:
+    - go mod tidy
+    - go vet ./...
+
+builds:
+  - id: nodeup
+    main: ./cmd/nodeup
+    binary: nodeup
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+      - -ldflags=-s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.CommitDate}}
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64 # windows/arm64 is rare; add later if demanded
+    mod_timestamp: '{{ .CommitTimestamp }}'
+
+archives:
+  - id: default
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  version_template: '{{ incpatch .Version }}-next'
+
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^chore:'
+      - '^test:'
+      - '^ci:'
+      - '^style:'
+  groups:
+    - title: Features
+      regexp: '^feat'
+      order: 0
+    - title: Bug fixes
+      regexp: '^fix'
+      order: 1
+    - title: Performance
+      regexp: '^perf'
+      order: 2
+    - title: Refactors
+      regexp: '^refactor'
+      order: 3
+    - title: Others
+      order: 999
+
+# Homebrew tap — auto-pushed on every release. Requires HOMEBREW_TAP_TOKEN.
+brews:
+  - name: nodeup
+    repository:
+      owner: dipto0321
+      name: homebrew-tap
+      token: '{{ .Env.HOMEBREW_TAP_TOKEN }}'
+    homepage: 'https://github.com/dipto0321/nodeup'
+    description: 'Automated Node.js version upgrade with global package migration'
+    license: 'MIT'
+    install: |
+      bin.install "nodeup"
+    test: |
+      system "#{bin}/nodeup", "--version"
+
+# Scoop bucket — auto-pushed on every release. Requires SCOOP_BUCKET_TOKEN.
+scoops:
+  - repository:
+      owner: dipto0321
+      name: scoop-bucket
+      token: '{{ .Env.SCOOP_BUCKET_TOKEN }}'
+    homepage: 'https://github.com/dipto0321/nodeup'
+    description: 'Automated Node.js version upgrade with global package migration'
+    license: MIT
+
+# Sign the binaries with cosign if COSIGN_KEY is set in the environment.
+# Disabled by default — uncomment to enable.
+# signs:
+#   - cmd: cosign
+#     artifacts: checksum
+#     signature: '${artifact}.sig'
+#     certificate: '${artifact}.pem'
+#     output: true
+
+# Publish the Docker image too? Out of scope for v1.0.0.
+# dockers: []

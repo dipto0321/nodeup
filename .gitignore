@@ -1,0 +1,33 @@
+.puku/
+nodeup.md%
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.txt
+coverage.html
+*.coverprofile
+vendor/
+.idea/
+.vscode/
+
+# GoReleaser
+dist/
+
+# nodeup runtime data
+.nodeup/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor / temp
+*.swp
+*.swo
+*~
+.tmp/

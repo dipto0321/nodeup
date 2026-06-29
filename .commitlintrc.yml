@@ -1,0 +1,65 @@
+---
+# commitlint configuration for nodeup.
+#
+# Enforces Conventional Commits (https://www.conventionalcommits.org/).
+# CI runs `wagoid/commitlint-github-action@v5` against every commit in
+# a PR; local devs can run `npx commitlint --edit` to lint the staged
+# message.
+
+extends:
+  - '@commitlint/config-conventional'
+
+rules:
+  # Scopes are project-specific (see nodeup.md §12). We allow a small
+  # extra set: "deps" for dependency bumps, "release" for release-prep
+  # commits.
+  scope-enum:
+    - 2
+    - always
+    - - detector
+      - manager
+      - packages
+      - node
+      - config
+      - ui
+      - platform
+      - cli
+      - deps
+      - release
+      - ci
+      - docs
+  # Type whitelist matches nodeup.md §12 exactly.
+  type-enum:
+    - 2
+    - always
+    - - feat
+      - fix
+      - docs
+      - style
+      - refactor
+      - perf
+      - test
+      - build
+      - ci
+      - chore
+      - revert
+  # Subject must be <= 72 chars (conventional commit norm).
+  header-max-length:
+    - 2
+    - always
+    - 72
+  # Lowercase subject after the type(scope): prefix.
+  subject-case:
+    - 2
+    - always
+    - lowercase
+  # No trailing period on subject — conventional commits norm.
+  subject-full-stop:
+    - 2
+    - always
+    - never
+  # Body lines wrap at 100 cols.
+  body-max-line-length:
+    - 2
+    - always
+    - 100
