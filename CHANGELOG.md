@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Consolidated the internal `nodeup.md` design doc into `README.md`
+  (new "Compatibility notes" subsection, expanded Contributing
+  conventions) and stripped the now-dangling `nodeup.md` references
+  from source, config, docs, and issue templates. The file is removed.
+
 ### Added
 - Initial project scaffolding (`chore: initial project scaffolding`)
 - Cobra-based CLI with `upgrade`, `check`, `list`, `packages`, `config`, `version` subcommands
@@ -22,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.0] - 2024-07-01
 
 ### Added
-- Project blueprint (`nodeup.md`) — design doc covering language choice, scope, detection engine, version resolution, package migration, architecture, CLI design, edge cases, git workflow, conventional commits, versioning, CI/CD, and distribution
+- Project blueprint — internal design doc covering language choice, scope, detection engine, version resolution, package migration, architecture, CLI design, edge cases, git workflow, conventional commits, versioning, CI/CD, and distribution. (Superseded by `README.md`; the standalone doc was removed in the Unreleased section.)
 
 [Unreleased]: https://github.com/dipto0321/nodeup/compare/v0.0.0...HEAD
 [0.0.0]: https://github.com/dipto0321/nodeup/releases/tag/v0.0.0

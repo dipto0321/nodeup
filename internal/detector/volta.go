@@ -17,8 +17,8 @@ import (
 // Volta is the Volta implementation (https://volta.sh). Volta is a true
 // binary (unlike NVM, which is a shell function), but it stores Node
 // installs in a fixed on-disk layout under $VOLTA_HOME rather than
-// advertising them through a CLI query. See nodeup.md §5 for the full
-// detection strategy.
+// advertising them through a CLI query. See
+// internal/detector/detector.go for the Manager interface contract.
 //
 // Volta's on-disk layout (v2.x, "v4" internal layout):
 //

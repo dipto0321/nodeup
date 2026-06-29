@@ -6,9 +6,8 @@ import (
 
 // newUpgradeCmd is a stub for Phase 0. It will be implemented in Phase 4.
 //
-// See nodeup.md §4 (Core Algorithm) and §9 (CLI Design) for the planned
-// behavior: detect manager → fetch versions → diff → snapshot → install →
-// migrate → cleanup.
+// Planned behavior: detect manager → fetch versions → diff → snapshot →
+// install → migrate → cleanup.
 func newUpgradeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "upgrade",

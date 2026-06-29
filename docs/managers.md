@@ -27,8 +27,6 @@ priority order — earlier managers win when multiple are installed.
    ~/.nvm/nvm.sh && nvm <cmd>"` so the function is loaded.
 3. **Strategy B (fallback):** Use a binary wrapper if one is installed.
 
-See `nodeup.md` §5 for the rationale.
-
 ## Locking to a specific manager
 
 ```bash

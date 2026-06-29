@@ -10,9 +10,9 @@ extends:
   - '@commitlint/config-conventional'
 
 rules:
-  # Scopes are project-specific (see nodeup.md §12). We allow a small
-  # extra set: "deps" for dependency bumps, "release" for release-prep
-  # commits.
+  # Scopes are project-specific. The core set comes from the package
+  # layout (detector, cli, platform, ...); extras: "deps" for
+  # dependency bumps, "release" for release-prep commits.
   scope-enum:
     - 2
     - always
@@ -29,7 +29,7 @@ rules:
       - ci
       - docs
       - lint
-  # Type whitelist matches nodeup.md §12 exactly.
+  # Type whitelist matches Conventional Commits.
   type-enum:
     - 2
     - always

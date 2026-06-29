@@ -4,7 +4,7 @@ import "github.com/spf13/cobra"
 
 // newPackagesCmd is a stub for Phase 0. It will be implemented in Phase 3.
 //
-// See nodeup.md §7 (Global Package Migration). Subcommands:
+// Subcommands:
 //
 //	nodeup packages snapshot   — capture global npm packages for the active version
 //	nodeup packages list       — list packages for a snapshot

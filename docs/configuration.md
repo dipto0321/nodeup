@@ -25,5 +25,3 @@ Resolution precedence (highest first):
 | `cleanup.auto` | bool | `false` | Auto-remove old versions |
 | `cleanup.prompt` | bool | `true` | Ask before removing each old version |
 | `cache.ttl` | int | `3600` | Cache TTL in seconds |
-
-See `nodeup.md` §9 for the design rationale.

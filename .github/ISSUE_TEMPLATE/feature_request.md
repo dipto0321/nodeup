@@ -24,7 +24,7 @@ Who benefits from this? What's the workflow it unlocks?
 
 ## Out-of-scope check
 
-Some things are explicitly out of scope for v1 (see [`nodeup.md`](../../nodeup.md) §3). Is your request covered there?
+Some things are explicitly out of scope for v1 — at minimum: `.nvmrc` / `.node-version` management, updating `npm` itself, `yarn`/`pnpm` global packages, and `nodeup` self-updates. If your request falls in one of these buckets, comment on the existing tracking issue instead.
 
 - [ ] Yes — I'll comment on the existing tracking issue instead
 - [ ] No — this is a new request

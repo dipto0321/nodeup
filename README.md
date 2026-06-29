@@ -39,6 +39,28 @@ them over, and (optionally) cleans up — all interactively, all resumable.
 - 🧪 **Dry-run mode** — see the plan before anything changes
 - 🔌 **Zero lock-in**: works on top of your existing manager, doesn't replace it
 
+## Compatibility notes
+
+A few things worth knowing before you run `nodeup`:
+
+- **`nvm` is a shell function, not a binary** — `nodeup` transparently
+  sources `~/.nvm/nvm.sh` (or `$NVM_DIR/nvm.sh`) before calling it. No
+  setup required.
+- **Multiple managers installed?** `nodeup` prompts you to pick one
+  the first time and remembers it in `~/.nodeup/config.yaml`. You can
+  override per-invocation with `--manager <name>`.
+- **System Node (e.g. installed via Homebrew, apt, or the Windows
+  installer) is detected but cannot be upgraded** — install a version
+  manager first if you want `nodeup` to manage it.
+- **Bundled packages are always skipped during migration**: `npm`,
+  `corepack`, and `npx` ship with Node itself and are not reinstalled.
+- **Native addons may need a rebuild** after a major Node version
+  bump. If something like `node-sass` or `sharp` misbehaves, run
+  `npm rebuild -g` against the new version.
+- **Concurrent runs are blocked** via a lock file at
+  `~/.nodeup/nodeup.lock`. If a run crashes mid-upgrade, the next
+  invocation offers to restore from the snapshot written at the start.
+
 ## Installation
 
 ### Homebrew (macOS, Linux)
@@ -122,7 +144,7 @@ Run `nodeup <command> --help` for the full flag reference.
 
 ## How it works
 
-See [`nodeup.md`](./nodeup.md) for the full design doc. In short:
+In short:
 
 1. **Detect** which version manager(s) are installed
 2. **Resolve** to a single manager (prompt if multiple)
@@ -161,8 +183,7 @@ full schema.
 
 ## Project status
 
-This is the **v1.0.0 development line**. See [`nodeup.md`](./nodeup.md) for the
-phased execution plan and `CHANGELOG.md` for what's done.
+This is the **v1.0.0 development line**. See `CHANGELOG.md` for what's done.
 
 | Version | Status | Notes |
 |---|---|---|
@@ -170,15 +191,29 @@ phased execution plan and `CHANGELOG.md` for what's done.
 
 ## Contributing
 
-Contributions welcome! See [`CONTRIBUTING.md`](./CONTRIBUTING.md) (TBD) and the
-branching / commit conventions in [`nodeup.md`](./nodeup.md) §11–§12.
+Contributions welcome! A `CONTRIBUTING.md` will land alongside Phase 5; in the
+meantime, this is the working contract.
 
-TL;DR:
+**Branching.** Branch from `main` using one of:
+`feat/<scope>/…`, `fix/<scope>/…`, `chore/<scope>/…`,
+`docs/…`, `ci/…`, `test/<scope>/…`, `refactor/<scope>/…`.
+`main` is protected — every change goes through a PR and is squash-merged
+with the source branch deleted. Releases are tag-driven: pushing a
+`v*.*.*` tag fires the GoReleaser workflow.
 
-- Branch from `main`: `feat/<scope>/<short-desc>`, `fix/<scope>/<short-desc>`, etc.
-- Conventional Commits: `feat(detector): add Volta support`
-- One PR per logical change
-- CI must be green; `make ci` runs everything locally
+**Commit messages — Conventional Commits.** Type and scope are
+enforced by commitlint in CI.
+
+- Allowed **types**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`,
+  `test`, `build`, `ci`, `chore`, `revert`.
+- Allowed **scopes**: `detector`, `manager`, `packages`, `node`, `config`,
+  `ui`, `platform`, `cli`, `deps`, `release`, `ci`, `docs`, `lint`.
+- **Breaking changes** use the `!` marker in the type/scope header and a
+  `BREAKING CHANGE:` footer in the body, e.g.
+  `feat(config)!: drop legacy manager=auto key`.
+
+**Pull requests.** One PR per logical change. CI must be green; `make ci`
+runs everything locally.
 
 ## License
 

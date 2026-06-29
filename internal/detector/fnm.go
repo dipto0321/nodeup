@@ -12,8 +12,8 @@ import (
 	"github.com/dipto0321/nodeup/internal/platform"
 )
 
-// FNM is the Fast Node Manager implementation. See nodeup.md §5 for the
-// detection strategy and the supported command surface.
+// FNM is the Fast Node Manager implementation. See
+// internal/detector/detector.go for the Manager interface contract.
 //
 // Phase 1 implements the detection surface only:
 //   - Detect       : cheap PATH probe via exec.LookPath
