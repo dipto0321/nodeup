@@ -41,3 +41,5 @@ Or via flag:
 ```bash
 nodeup upgrade --manager fnm
 ```
+
+> _Status: Phase 1 ✅ done — all 8 managers detected · last updated 2026-06-29_

@@ -195,31 +195,20 @@ phases layer commands on top: `nodeup check` (Phase 2) → `nodeup packages`
 (Phase 3) → `nodeup upgrade` end-to-end (Phase 4) → `nodeup config`
 (Phase 5) → first tagged release (Phase 7).
 
+## Docs index
+
+| Topic | Doc |
+|---|---|
+| Supported version managers, detection, locking to one | [`docs/managers.md`](./docs/managers.md) |
+| Config schema, precedence rules, env vars | [`docs/configuration.md`](./docs/configuration.md) |
+| Install channels (Homebrew / Scoop / npm / binary / source) | [`docs/installation.md`](./docs/installation.md) |
+| First-stable + patch release runbook | [`docs/release-checklist.md`](./docs/release-checklist.md) |
+
 ## Contributing
 
-Contributions welcome! A `CONTRIBUTING.md` will land alongside Phase 5; in the
-meantime, this is the working contract.
-
-**Branching.** Branch from `main` using one of:
-`feat/<scope>/…`, `fix/<scope>/…`, `chore/<scope>/…`,
-`docs/…`, `ci/…`, `test/<scope>/…`, `refactor/<scope>/…`.
-`main` is protected — every change goes through a PR and is squash-merged
-with the source branch deleted. Releases are tag-driven: pushing a
-`v*.*.*` tag fires the GoReleaser workflow.
-
-**Commit messages — Conventional Commits.** Type and scope are
-enforced by commitlint in CI.
-
-- Allowed **types**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`,
-  `test`, `build`, `ci`, `chore`, `revert`.
-- Allowed **scopes**: `detector`, `manager`, `packages`, `node`, `config`,
-  `ui`, `platform`, `cli`, `deps`, `release`, `ci`, `docs`, `lint`.
-- **Breaking changes** use the `!` marker in the type/scope header and a
-  `BREAKING CHANGE:` footer in the body, e.g.
-  `feat(config)!: drop legacy manager=auto key`.
-
-**Pull requests.** One PR per logical change. CI must be green; `make ci`
-runs everything locally.
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the working contract —
+branching, Conventional Commits rules, local dev (`make ci`), PR
+workflow, issue / security etiquette, and coding style.
 
 ## License
 
