@@ -1,7 +1,9 @@
 # nodeup Configuration
 
-> _Placeholder doc. Full content lands in Phase 5 alongside the config
-> subsystem implementation._
+The schema below is the source of truth. Config-file parsing and the
+`nodeup config set/get/show` subcommands land in Phase 5
+(`feat(config): …`), but the schema and env-var precedence rules are
+fixed now so other subsystems can reference them.
 
 The optional config file lives at `~/.nodeup/config.yaml`.
 

@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (new "Compatibility notes" subsection, expanded Contributing
   conventions) and stripped the now-dangling `nodeup.md` references
   from source, config, docs, and issue templates. The file is removed.
+- Dropped the stale "Placeholder doc" banners from
+  `docs/managers.md`, `docs/configuration.md`, `docs/installation.md`,
+  and `docs/release-checklist.md` and replaced them with concrete
+  pointers to the source files or workflows that govern each doc's
+  subject. No content removed; only stale phase references (Phase 5 /
+  7 / 8) were rewritten to reflect actual state — Phase 1 (8/8
+  managers detected) is now flagged as ✅ in the README's
+  `Project status` table.
 
 ### Added
 - Initial project scaffolding (`chore: initial project scaffolding`)

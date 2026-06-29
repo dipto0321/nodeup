@@ -1,7 +1,10 @@
 # Supported Version Managers
 
-> _Placeholder doc. Full content lands in Phases 1 and 5 alongside the
-> detector implementations._
+All 8 managers listed below are fully detected by `nodeup` as of v1.0.0
+(macOS, Linux, and Windows where applicable). The matrix is the source of
+truth — keep it in sync with `internal/detector/registry_*.go` and the
+per-manager files (`fnm.go`, `nvm.go`, `volta.go`, `asdf.go`, `mise.go`,
+`n.go`, `nodenv.go`, `nvm_windows.go`).
 
 nodeup auto-detects the following version managers. Detection runs in
 priority order — earlier managers win when multiple are installed.

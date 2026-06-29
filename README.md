@@ -187,7 +187,13 @@ This is the **v1.0.0 development line**. See `CHANGELOG.md` for what's done.
 
 | Version | Status | Notes |
 |---|---|---|
-| v1.0.0 | 🛠 in development | Initial release: all managers, all platforms |
+| v1.0.0 | 🛠 in development | Phase 1 ✅ — 8/8 managers detected (fnm, nvm, Volta, asdf, mise, n, nodenv, nvm-windows). Phase 2 — `nodeup check` against nodejs.org/dist. |
+
+Phase 1 is the **detection surface** — every manager is recognized and the
+version + installed-list reads return real data (PRs #1–#8). Subsequent
+phases layer commands on top: `nodeup check` (Phase 2) → `nodeup packages`
+(Phase 3) → `nodeup upgrade` end-to-end (Phase 4) → `nodeup config`
+(Phase 5) → first tagged release (Phase 7).
 
 ## Contributing
 
