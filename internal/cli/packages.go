@@ -33,14 +33,11 @@ diff the set of globally installed packages per Node.js version.`,
 }
 
 func newSnapshotCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "snapshot",
 		Short: "Snapshot the active version's global packages",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runSnapshot(cmd, args)
-		},
+		RunE:  runSnapshot,
 	}
-	return cmd
 }
 
 func runSnapshot(cmd *cobra.Command, args []string) error {
@@ -75,14 +72,11 @@ func getCurrentVersion(m detector.Manager) (semver.Version, error) {
 }
 
 func newPackagesListCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "list",
 		Short: "List packages from a snapshot",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPackagesList(cmd, args)
-		},
+		RunE:  runPackagesList,
 	}
-	return cmd
 }
 
 func runPackagesList(cmd *cobra.Command, args []string) error {
@@ -106,15 +100,12 @@ func runPackagesList(cmd *cobra.Command, args []string) error {
 }
 
 func newRestoreCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "restore <manager> <version>",
 		Short: "Re-install packages from a snapshot",
 		Args:  cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runRestore(cmd, args)
-		},
+		RunE:  runRestore,
 	}
-	return cmd
 }
 
 func runRestore(cmd *cobra.Command, args []string) error {
@@ -135,12 +126,11 @@ func runRestore(cmd *cobra.Command, args []string) error {
 }
 
 func newDiffCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "diff <version1> <version2>",
 		Short: "Diff two snapshots",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("diff not yet implemented")
 		},
 	}
-	return cmd
 }
