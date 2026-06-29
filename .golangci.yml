@@ -23,12 +23,6 @@
 run:
   timeout: 5m
   tests: true
-  # Skip the auto-generated docs/ and .puku/ folders.
-  exclude-dirs:
-    - docs
-    - dist
-    - vendor
-    - nodeup-npm
 
 linters:
   disable-all: true
@@ -64,6 +58,14 @@ issues:
   # Don't bail out on first failure — show all problems.
   max-issues-per-linter: 0
   max-same-issues: 0
+  # Skip auto-generated / vendored / build-output directories.
+  # In v1.64.x the `run.exclude-dirs` key was removed from the run-schema
+  # and consolidated here as `issues.exclude-dirs`.
+  exclude-dirs:
+    - docs
+    - dist
+    - vendor
+    - nodeup-npm
   # Exclude generated files from lint checks.
   exclude-rules:
     - path: _test\.go
