@@ -48,7 +48,7 @@ func All() []Manager {
 func ByName(name string) (Manager, bool) {
 	for _, m := range All() {
 		if m.Name() == name {
-			return m, nil
+			return m, true
 		}
 	}
 	return nil, false
