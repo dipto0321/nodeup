@@ -75,6 +75,9 @@ issues:
     - path: internal/detector/.*_windows\.go
       linters:
         - unused        # windows-only symbols appear unused on linux runners
+    - path: internal/cli/upgrade\.go
+      linters:
+        - unused        # cross-file calls via root.go registration
 
 # Output configuration.
 output:

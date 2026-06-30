@@ -20,10 +20,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   7 / 8) were rewritten to reflect actual state — Phase 1 (8/8
   managers detected) is now flagged as ✅ in the README's
   `Project status` table.
+- `internal/node`: replaced the `(LTS bool, TS string)` pair on
+  `ManifestVersion` with a single `LTSCodename *string` so the
+  nodejs.org `lts` JSON union (`false` for Current, codename string
+  for LTS) decodes cleanly via a custom `UnmarshalJSON`. The previous
+  shape silently dropped the `TS` codename whenever `lts` was the JSON
+  literal `false`, so `LatestLTS`/`LatestCurrent` could return the
+  wrong row. Now both paths share one field and one decoder.
 
 ### Added
 - Node.js versions API client (`internal/node`): fetch nodejs.org/dist/index.json with 24h TTL cache, LatestLTS and LatestCurrent resolvers
 - `nodeup check` command: displays available LTS and Current versions with optional --json and --offline flags
+- `nodeup upgrade` command (end-to-end): detect manager → resolve target
+  LTS/Current → compute install plan (with `--dry-run`) → snapshot
+  installed globals → install new versions → set default → restore
+  packages. Supports `--lts` / `--current` to restrict, `--manager` to
+  override detection, `--no-migrate` to skip package migration, and
+  `--offline` to use the cached manifest.
 - Package snapshot/restore (`internal/packages`): capture and restore global npm packages across Node versions
 - Migration report: per-package result tracking with ok/failed/skipped status
 - `nodeup packages snapshot`: snapshot the active version's global npm packages
