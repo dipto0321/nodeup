@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- YAML config file support (`internal/config`): the documented schema
+  from `docs/configuration.md` is now first-class. Settings live in
+  `~/.nodeup/config.yaml` (override with `$NODEUP_CONFIG` or redirect
+  `$NODEUP_HOME`) and are merged with env vars and built-in defaults
+  using a four-layer precedence chain (defaults < file < env < CLI
+  flags). Every field — including `track.lts: false` and other
+  explicit-zero values — is preserved across round-trips via a per-
+  field set-flag overlay so partial files don't clobber defaults.
+  Saves are atomic (temp + rename, mode 0600) and refuse to persist
+  invalid configs.
+- `nodeup config` subcommands:
+  - `show` — print the merged effective config as YAML (the output
+    round-trips with the file format).
+  - `get <key>` — read a single dotted key (e.g. `packages.skip`).
+  - `set <key> <value>` — edit a key in the file layer and save it.
+    Validates before writing; rejects unknown keys and bad values.
+  - `init [--force]` — scaffold a fresh config at the default path;
+    refuses to overwrite without `--force`.
+- Environment variable overlay (`NODEUP_MANAGER`, `NODEUP_TRACK_LTS`,
+  `NODEUP_TRACK_CURRENT`, `NODEUP_PACKAGES_MIGRATE`,
+  `NODEUP_PACKAGES_STRATEGY`, `NODEUP_CACHE_TTL`). Parse errors
+  include the variable name so env typos surface immediately.
+- `nodeup upgrade` now reads its effective config from
+  `loadConfigOrDefault()`: `--manager` flag still wins over the file
+  value, and `cfg.Packages.Migrate` replaces the hard-coded `true`
+  so users can opt out globally.
+- `scripts/issue-workflow.sh`: issue→branch→PR→squash-merge automation
+  script (bug-fix in the same change: fixed the bash regex parser
+  that was rejecting valid issue titles because space-separated
+  alternations aren't valid ERE).
+
 ### Changed
 - Consolidated the internal `nodeup.md` design doc into `README.md`
   (new "Compatibility notes" subsection, expanded Contributing

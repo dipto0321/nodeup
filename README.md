@@ -178,8 +178,10 @@ cache:
 ```
 
 Flags override env vars (`NODEUP_MANAGER`, `NODEUP_TRACK_LTS`, `NODEUP_CACHE_TTL`)
-override the file. See [`docs/configuration.md`](./docs/configuration.md) for the
-full schema.
+override the file. Manage it with `nodeup config {show,get,set,init}` — for
+example `nodeup config set manager fnm` writes through to the file (refuses
+to write invalid values, refuses to overwrite on `init` without `--force`).
+See [`docs/configuration.md`](./docs/configuration.md) for the full schema.
 
 ## Project status
 
@@ -187,7 +189,7 @@ This is the **v1.0.0 development line**. See `CHANGELOG.md` for what's done.
 
 | Version | Status | Notes |
 |---|---|---|
-| v1.0.0 | 🛠 in development | Phase 1 ✅ — 8/8 managers detected. Phase 2 ✅ — `nodeup check` with nodejs.org/dist/index.json fetch + TTL cache. Phase 3 ✅ — package snapshot/restore + migration report. Phase 4 — end-to-end upgrade command. |
+| v1.0.0 | 🛠 in development | Phase 1 ✅ — 8/8 managers detected. Phase 2 ✅ — `nodeup check` with nodejs.org/dist/index.json fetch + TTL cache. Phase 3 ✅ — package snapshot/restore + migration report. Phase 4 ✅ — end-to-end `nodeup upgrade`. Phase 5 ✅ — YAML config file + `config` subcommands (show / get / set / init). |
 
 Phase 1 is the **detection surface** — every manager is recognized and the
 version + installed-list reads return real data (PRs #1–#8). Subsequent

@@ -1,5 +1,5 @@
 .puku/
-nodeup.md%
+nodeup.md
 
 # Go
 *.exe
@@ -39,3 +39,6 @@ Thumbs.db
 # install into a throwaway node_modules.
 node_modules/
 package-lock.json
+
+# Tooling session metadata (not part of the project source tree).
+.claude/
