@@ -16,11 +16,49 @@ import (
 
 // ManifestVersion represents a single entry from nodejs.org/dist/index.json.
 // Only the fields we need are captured; the JSON has many more.
+//
+// The nodejs.org `lts` field is a JSON union: a string codename (e.g.
+// "Iron") for LTS releases, and the literal `false` for Current releases.
+// We model it as *string: nil means non-LTS / Current; non-nil means LTS
+// and the value is the codename. A custom UnmarshalJSON is used so this
+// works without callers having to know about the union.
 type ManifestVersion struct {
-	Version string `json:"version"` // e.g., "v22.5.0"
-	Date    string `json:"date"`    // e.g., "2024-07-01"
-	LTS     bool   `json:"lts"`     // true if this is an LTS release
-	TS      string `json:"ts"`      // LTS codename like "Argon" or empty/nil
+	Version     string  `json:"version"` // e.g., "v22.5.0"
+	Date        string  `json:"date"`    // e.g., "2024-07-01"
+	LTSCodename *string `json:"lts"`     // nil=Current; otherwise LTS codename
+}
+
+// UnmarshalJSON decodes a nodejs.org index.json entry. The `lts` field is
+// either the JSON literal `false` (Current release) or a string codename
+// (LTS release). We split it with json.RawMessage so the struct remains
+// idiomatic Go.
+func (m *ManifestVersion) UnmarshalJSON(data []byte) error {
+	// alias avoids recursing into UnmarshalJSON.
+	type alias ManifestVersion
+	var raw struct {
+		alias
+		LTS json.RawMessage `json:"lts"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*m = ManifestVersion(raw.alias)
+
+	// Distinguish the JSON literal `false` from a missing/null field.
+	if len(raw.LTS) == 0 || string(raw.LTS) == "null" {
+		m.LTSCodename = nil
+		return nil
+	}
+	if string(raw.LTS) == "false" {
+		m.LTSCodename = nil
+		return nil
+	}
+	var name string
+	if err := json.Unmarshal(raw.LTS, &name); err != nil {
+		return fmt.Errorf("decode lts codename: %w", err)
+	}
+	m.LTSCodename = &name
+	return nil
 }
 
 // Manifest is the full parsed index.json structure.
@@ -103,10 +141,9 @@ func (m Manifest) LatestLTS() (*ManifestVersion, error) {
 	var latestSem *semver.Version
 
 	for i := range m {
-		// Skip LTS=false with empty TS (these are Current releases)
-		// But include LTS=true OR TS!="" (LTS releases)
-		isLTS := m[i].LTS || m[i].TS != ""
-		if !isLTS {
+		// LTS releases have a non-nil codename (e.g. "Iron"); Current
+		// releases leave the field as JSON `false` and decode to nil.
+		if m[i].LTSCodename == nil {
 			continue
 		}
 
@@ -133,8 +170,8 @@ func (m Manifest) LatestCurrent() (*ManifestVersion, error) {
 	var latestSem *semver.Version
 
 	for i := range m {
-		// Current releases have LTS=false and empty TS
-		if m[i].LTS || m[i].TS != "" {
+		// Current releases have a nil LTS codename.
+		if m[i].LTSCodename != nil {
 			continue
 		}
 
