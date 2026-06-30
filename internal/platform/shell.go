@@ -69,6 +69,13 @@ func RunShell(ctx context.Context, name string, args ...string) (*RunResult, err
 //     users commonly `source ~/.nvm/nvm.sh` and nvm.sh is bash-only.
 //   - On Windows we use `cmd.exe /c <cmd>` (cmd.exe is guaranteed present).
 //
+// IMPORTANT: any filesystem path embedded in `script` MUST be passed
+// through QuotePath first. We do not re-tokenize or auto-quote the
+// script string — what you give us is what the shell sees. Forgetting
+// QuotePath for a path that contains spaces (very common on Windows,
+// e.g. `C:\Program Files\...`) will produce a confusing parse error
+// or, worse, a silent substring split that runs the wrong command.
+//
 // Returns ErrNotFound if the shell itself is missing, which should be
 // effectively impossible on a normal install.
 func RunShellScript(ctx context.Context, script string) (*RunResult, error) {
