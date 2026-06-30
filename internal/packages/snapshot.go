@@ -19,6 +19,13 @@ type Package struct {
 	Version string
 }
 
+// SnapshotData represents the on-disk snapshot format.
+type SnapshotData struct {
+	Manager     string    `json:"manager"`
+	NodeVersion string    `json:"node_version"`
+	Packages    []Package `json:"packages"`
+}
+
 // Snapshot captures all globally installed npm packages for a given Node version.
 // It calls `npm ls -g --json --depth=0` and writes the result to disk.
 func Snapshot(ctx context.Context, managerName string, version semver.Version) error {
@@ -37,13 +44,13 @@ func Snapshot(ctx context.Context, managerName string, version semver.Version) e
 	}
 
 	pkgs := parsePackages(npmOutput.Dependencies)
-	snapshot := snapshot{
-		Manager:      managerName,
-		NodeVersion:  version.String(),
-		Packages:     pkgs,
+	snap := SnapshotData{
+		Manager:     managerName,
+		NodeVersion: version.String(),
+		Packages:    pkgs,
 	}
 
-	return saveSnapshot(snapshot)
+	return saveSnapshot(snap)
 }
 
 func runNpmListGlobal(ctx context.Context) ([]byte, error) {
@@ -79,20 +86,6 @@ func shouldSkipPackage(name string) bool {
 	return skipPackages[name] || strings.HasPrefix(name, "@npm:")
 }
 
-// SnapshotData represents the on-disk snapshot format.
-// Exported for CLI access.
-type SnapshotData struct {
-	Manager     string    `json:"manager"`
-	NodeVersion string    `json:"node_version"`
-	Packages    []Package `json:"packages"`
-}
-
-type snapshot struct {
-	Manager     string    `json:"manager"`
-	NodeVersion string    `json:"node_version"`
-	Packages    []Package `json:"packages"`
-}
-
 func snapshotPath(managerName, version string) (string, error) {
 	dir, err := platform.SnapshotsDir()
 	if err != nil {
@@ -102,7 +95,7 @@ func snapshotPath(managerName, version string) (string, error) {
 	return filepath.Join(dir, filename), nil
 }
 
-func saveSnapshot(s snapshot) error {
+func saveSnapshot(s SnapshotData) error {
 	path, err := snapshotPath(s.Manager, s.NodeVersion)
 	if err != nil {
 		return err
@@ -128,7 +121,7 @@ func Restore(ctx context.Context, managerName string, version semver.Version) er
 		return fmt.Errorf("read snapshot: %w", err)
 	}
 
-	var s snapshot
+	var s SnapshotData
 	if err := json.Unmarshal(data, &s); err != nil {
 		return fmt.Errorf("parse snapshot: %w", err)
 	}
@@ -153,28 +146,28 @@ func pkgSpec(p Package) string {
 	return fmt.Sprintf("%s@%s", p.Name, p.Version)
 }
 
-// LoadSnapshot reads a snapshot file without the parsed version.
-func LoadSnapshot(managerName, version string) (snapshot, error) {
+// LoadSnapshot reads a snapshot file.
+func LoadSnapshot(managerName, version string) (SnapshotData, error) {
 	path, err := snapshotPath(managerName, version)
 	if err != nil {
-		return snapshot{}, err
+		return SnapshotData{}, err
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return snapshot{}, err
+		return SnapshotData{}, err
 	}
 
-	var s snapshot
+	var s SnapshotData
 	if err := json.Unmarshal(data, &s); err != nil {
-		return snapshot{}, fmt.Errorf("parse snapshot: %w", err)
+		return SnapshotData{}, fmt.Errorf("parse snapshot: %w", err)
 	}
 
 	return s, nil
 }
 
 // ListSnapshots returns all snapshot files in the snapshots directory.
-func ListSnapshots() ([]snapshot, error) {
+func ListSnapshots() ([]SnapshotData, error) {
 	dir, err := platform.SnapshotsDir()
 	if err != nil {
 		return nil, err
@@ -185,7 +178,7 @@ func ListSnapshots() ([]snapshot, error) {
 		return nil, err
 	}
 
-	var result []snapshot
+	var result []SnapshotData
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -194,7 +187,7 @@ func ListSnapshots() ([]snapshot, error) {
 		if err != nil {
 			continue
 		}
-		var s snapshot
+		var s SnapshotData
 		if err := json.Unmarshal(data, &s); err != nil {
 			continue
 		}
@@ -202,4 +195,31 @@ func ListSnapshots() ([]snapshot, error) {
 	}
 
 	return result, nil
+}
+
+// DiffSnapshots compares two snapshots and returns added/removed packages.
+func DiffSnapshots(v1, v2 []Package) (added, removed []Package) {
+	v1Map := make(map[string]bool)
+	for _, p := range v1 {
+		v1Map[p.Name] = true
+	}
+
+	for _, p := range v2 {
+		if !v1Map[p.Name] {
+			added = append(added, p)
+		}
+	}
+
+	v2Map := make(map[string]bool)
+	for _, p := range v2 {
+		v2Map[p.Name] = true
+	}
+
+	for _, p := range v1 {
+		if !v2Map[p.Name] {
+			removed = append(removed, p)
+		}
+	}
+
+	return added, removed
 }

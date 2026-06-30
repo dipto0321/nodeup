@@ -127,10 +127,37 @@ func runRestore(cmd *cobra.Command, args []string) error {
 
 func newDiffCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "diff <version1> <version2>",
+		Use:   "diff <manager> <version1> <version2>",
 		Short: "Diff two snapshots",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("diff not yet implemented")
-		},
+		Args:  cobra.ExactArgs(3),
+		RunE:  runDiff,
 	}
+}
+
+func runDiff(cmd *cobra.Command, args []string) error {
+	managerName := args[0]
+
+	s1, err := packages.LoadSnapshot(managerName, args[1])
+	if err != nil {
+		return fmt.Errorf("load snapshot %s: %w", args[1], err)
+	}
+
+	s2, err := packages.LoadSnapshot(managerName, args[2])
+	if err != nil {
+		return fmt.Errorf("load snapshot %s: %w", args[2], err)
+	}
+
+	added, removed := packages.DiffSnapshots(s1.Packages, s2.Packages)
+
+	cmd.Printf("Added packages:\n")
+	for _, p := range added {
+		cmd.Printf("  + %s@%s\n", p.Name, p.Version)
+	}
+
+	cmd.Printf("Removed packages:\n")
+	for _, p := range removed {
+		cmd.Printf("  - %s@%s\n", p.Name, p.Version)
+	}
+
+	return nil
 }
