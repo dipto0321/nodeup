@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Project status` table.
 
 ### Added
+- Node.js versions API client (`internal/node`): fetch nodejs.org/dist/index.json with 24h TTL cache, LatestLTS and LatestCurrent resolvers
+- `nodeup check` command: displays available LTS and Current versions with optional --json and --offline flags
+- Package snapshot/restore (`internal/packages`): capture and restore global npm packages across Node versions
+- Migration report: per-package result tracking with ok/failed/skipped status
+- `nodeup packages snapshot`: snapshot the active version's global npm packages
+- `nodeup packages list`: list all saved snapshots
+- `nodeup packages restore <manager> <version>`: restore packages from a snapshot
+- `nodeup packages diff <manager> <v1> <v2>`: compare two snapshots
 - Initial project scaffolding (`chore: initial project scaffolding`)
 - Cobra-based CLI with `upgrade`, `check`, `list`, `packages`, `config`, `version` subcommands
 - Manager interface (`internal/detector`) covering `fnm`, `nvm`, `Volta`, `asdf`, `mise`, `n`, `nodenv`, and (Windows) `nvm-windows`
