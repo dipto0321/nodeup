@@ -86,6 +86,17 @@ func shouldSkipPackage(name string) bool {
 	return skipPackages[name] || strings.HasPrefix(name, "@npm:")
 }
 
+// SnapshotPath returns the conventional on-disk path of a snapshot
+// file given the manager name and Node version, e.g.
+// "<DataDir>/snapshots/fnm-20.10.0.json". It does not check that the
+// file exists — it only computes the path. Exported so the upgrade
+// command can record the snapshot path inside the upgrade-in-progress
+// sentinel; the restore CLI likewise uses it to look up a snapshot by
+// name.
+func SnapshotPath(managerName, version string) (string, error) {
+	return snapshotPath(managerName, version)
+}
+
 func snapshotPath(managerName, version string) (string, error) {
 	dir, err := platform.SnapshotsDir()
 	if err != nil {
@@ -124,6 +135,34 @@ func Restore(ctx context.Context, managerName string, version semver.Version) er
 	var s SnapshotData
 	if err := json.Unmarshal(data, &s); err != nil {
 		return fmt.Errorf("parse snapshot: %w", err)
+	}
+
+	return installPackages(ctx, s.Packages)
+}
+
+// RestoreFromSnapshot reinstalls the packages contained in an arbitrary
+// snapshot file on disk. Unlike Restore, it does not look the snapshot up
+// by name in <DataDir>/snapshots/ — it reads exactly the path given.
+//
+// This is the explicit-replay entrypoint used by `nodeup packages restore
+// --from <path>` after an interrupted upgrade has been detected via the
+// sentinel file. The path can be:
+//
+//   - the snapshot the upgrade wrote (its absolute path is recorded in
+//     the sentinel under snapshot_path), or
+//   - any user-provided snapshot file the user wants to replay.
+//
+// We deliberately use os.ReadFile directly instead of LoadSnapshot so
+// the path does not have to live under <DataDir>/snapshots.
+func RestoreFromSnapshot(ctx context.Context, path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read snapshot %s: %w", path, err)
+	}
+
+	var s SnapshotData
+	if err := json.Unmarshal(data, &s); err != nil {
+		return fmt.Errorf("parse snapshot %s: %w", path, err)
 	}
 
 	return installPackages(ctx, s.Packages)
