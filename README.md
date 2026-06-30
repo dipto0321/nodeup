@@ -187,7 +187,7 @@ This is the **v1.0.0 development line**. See `CHANGELOG.md` for what's done.
 
 | Version | Status | Notes |
 |---|---|---|
-| v1.0.0 | 🛠 in development | Phase 1 ✅ — 8/8 managers detected (fnm, nvm, Volta, asdf, mise, n, nodenv, nvm-windows). Phase 2 — `nodeup check` against nodejs.org/dist. |
+| v1.0.0 | 🛠 in development | Phase 1 ✅ — 8/8 managers detected. Phase 2 ✅ — `nodeup check` with nodejs.org/dist/index.json fetch + TTL cache. Phase 3 — package snapshot/restore. |
 
 Phase 1 is the **detection surface** — every manager is recognized and the
 version + installed-list reads return real data (PRs #1–#8). Subsequent
