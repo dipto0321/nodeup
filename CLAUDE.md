@@ -77,6 +77,25 @@ Enforced by commitlint (`wagoid/commitlint-github-action@v5`). Violations block 
 - Required checks: `Lint (ubuntu)`, `Test (ubuntu-latest)`, `Test (macos-latest)`, `Test (windows-latest)`
 - No force pushes, no deletion; `enforce_admins: false` (owner can bypass)
 
+## AI workflow — standing orders (do not re-ask)
+
+When the user says **"start the next issue"** (or any equivalent — "work on the next one", "what's next", "pick up the next issue"), treat the following as the **default, no-clarification-needed workflow**:
+
+1. **Identify the next issue.** Run `gh issue list --state open --limit 30`. Pick the lowest-numbered open issue that is not a meta-tracking issue, unless the user says otherwise. If only meta-issues remain (e.g. Phase 6 cross-platform polish — issue #16), split the meta-issue into focused sub-issues first (one per concern, one PR each), then start the first sub-issue.
+2. **Always pass the issue number through `issue-workflow.sh`.** Use `./scripts/issue-workflow.sh start <issue#>` to branch, and `./scripts/issue-workflow.sh pr-body <issue#>` to render the PR body. The body includes `Closes #<issue#>` — **do not edit this out**. The `Closes` keyword is what auto-closes the issue when the PR is merged.
+3. **Verify the linkage before merging.** After `gh pr create`, run `gh pr view <PR#> --json body | grep -E 'Closes|Fixes' #<issue#>'` to confirm the PR body references the issue. If it does not, edit the PR body via `gh pr edit <PR#> --body-file <new-body.md>` before merging. **Do not squash-merge a PR that is not linked to its source issue.**
+4. **Merge with admin override when needed.** This repo's `enforce_admins: false` means solo-author merges need `--admin`. The conventional sequence is:
+   ```bash
+   gh pr merge <PR#> --squash --delete-branch --admin \
+       --body "Closes #<issue#>. Squash-merged per CONTRIBUTING.md."
+   git checkout main && git pull --ff-only origin main
+   git remote prune origin   # clean up the deleted feature branch's tracking ref
+   ```
+5. **Verify the issue auto-closed.** After the merge, run `gh issue view <issue#> --json state --jq .state` and confirm `CLOSED`. If still `OPEN`, add the issue close manually with `gh issue close <issue#> -c "Closed by <PR#>"`.
+6. **Then recurse.** Re-run `gh issue list --state open --limit 30`. If another issue is queued, ask the user to confirm continuation or proceed (if the user already said "keep going", just proceed).
+
+The `make next-issue` target wraps steps 1 and 2 for humans. AI sessions should drive the same script directly.
+
 ## Phase status
 
 | Phase | Status | Branch / PR |

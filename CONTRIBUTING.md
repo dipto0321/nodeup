@@ -81,6 +81,11 @@ config.manager=<name> explicitly, or omit the key for auto-detect.
 5. **Squash-merge with the source branch deleted** — same as PRs #1–#10.
 6. **No force-pushes after review.** Force-pushes during authoring are
    fine (use `--force-with-lease`).
+7. **Every PR must reference its source issue in the body** — use
+   `Closes #N` (closing the issue on merge) or `Refs #N` (linked but
+   not auto-closed). The `scripts/issue-workflow.sh pr-body` template
+   fills this in automatically from the issue number; do not strip it.
+   A PR without an issue reference will be sent back for revision.
 
 ## Local development
 

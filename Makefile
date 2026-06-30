@@ -93,3 +93,50 @@ deps: ## Print key Go module versions
 
 .PHONY: verify
 verify: ci build ## Full pre-commit verification (CI + build)
+
+# Drive a single GitHub issue from branch → PR → merge.
+# Usage: make next-issue ISSUE=16
+# Requires: gh authed for dipto0321/nodeup, conventional-commits commit on HEAD,
+# clean working tree. See scripts/issue-workflow.sh and [redacted].md
+# ("AI workflow — standing orders") for the full sequence.
+.PHONY: next-issue
+next-issue: ## Drive the next open issue end-to-end (branch → PR → squash-merge)
+	@if [ -z "$(ISSUE)" ]; then \
+		echo "usage: make next-issue ISSUE=<issue#>"; \
+		exit 1; \
+	fi
+	./scripts/issue-workflow.sh start $(ISSUE)
+	@echo ""
+	@echo "Now: edit code, then commit with a conventional-commits subject."
+	@echo "When CI is green and you're ready to merge, run:"
+	@echo "  make finish-pr ISSUE=$(ISSUE)"
+
+# Squash-merge the PR linked to ISSUE. Use after the branch is pushed
+# and CI is green. Uses --admin because branch protection requires 1
+# approving review but enforce_admins is disabled for solo author work.
+# Usage: make finish-pr ISSUE=16 PR=23   (PR auto-detected if omitted)
+.PHONY: finish-pr
+finish-pr: ## Squash-merge the PR for ISSUE and verify the issue auto-closes
+	@if [ -z "$(ISSUE)" ]; then \
+		echo "usage: make finish-pr ISSUE=<issue#> [PR=<pr#>]"; \
+		exit 1; \
+	fi
+	@PR="$${PR:-$(shell gh pr list --state open --json number,headRefName --jq '.[] | select(.headRefName|test("$(ISSUE)")) | .number' | head -1)}"; \
+	if [ -z "$$PR" ]; then \
+		echo "no open PR found for issue $(ISSUE). Run \`make next-issue ISSUE=$(ISSUE)\` first."; \
+		exit 1; \
+	fi; \
+	echo "==> squash-merging PR #$$PR with admin override (closes #$(ISSUE))"; \
+	gh pr merge "$$PR" --squash --delete-branch --admin \
+	    --body "Closes #$(ISSUE). Squash-merged per CONTRIBUTING.md."; \
+	echo "==> syncing local main"; \
+	git checkout main && git pull --ff-only origin main; \
+	git remote prune origin; \
+	echo "==> verifying issue #$(ISSUE) auto-closed"; \
+	STATE=$$(gh issue view $(ISSUE) --json state --jq .state); \
+	if [ "$$STATE" = "CLOSED" ]; then \
+		echo "✓ issue #$(ISSUE) is CLOSED"; \
+	else \
+		echo "warning: issue #$(ISSUE) is still $$STATE — closing manually"; \
+		gh issue close $(ISSUE) -c "Closed by PR #$$PR. Squash-merged per CONTRIBUTING.md."; \
+	fi
