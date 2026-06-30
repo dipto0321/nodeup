@@ -10,8 +10,34 @@
 package cli
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/spf13/cobra"
+
+	"github.com/dipto0321/nodeup/internal/packages"
 )
+
+// warnInterruptedUpgrade checks for an orphaned upgrade sentinel and
+// prints a hint to stderr if one is found. We use PersistentPreRunE so
+// this fires on EVERY subcommand invocation — including `nodeup version`
+// or `nodeup packages list` — without each leaf having to remember.
+//
+// Output goes to stderr so it does not pollute machine-readable stdout
+// (e.g., `nodeup list | jq .`). Errors from OrphanedSentinel other than
+// "no sentinel" are deliberately swallowed: a corrupted sentinel file
+// is a cosmetic issue and should not prevent the user's actual command
+// from running.
+func warnInterruptedUpgrade(_ *cobra.Command, _ []string) {
+	s, err := packages.OrphanedSentinel()
+	if err != nil || s == nil {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "Detected an interrupted upgrade (snapshot: %s, started: %s).\n",
+		s.SnapshotPath, s.StartedAt.Format("2006-01-02T15:04:05Z07:00"))
+	fmt.Fprintf(os.Stderr, "To resume: `nodeup packages restore --from %s`\n",
+		s.SnapshotPath)
+}
 
 // NewRootCmd builds the root `nodeup` command with all subcommands attached.
 //
@@ -40,6 +66,14 @@ Common workflows:
 Docs: https://github.com/dipto0321/nodeup`,
 		SilenceUsage:  true, // don't dump --help on every error
 		SilenceErrors: true, // we print errors ourselves in main()
+		// PersistentPreRunE runs before every subcommand. The
+		// interrupted-upgrade warning must run for the root command too
+		// (e.g., bare `nodeup` shows help), so we also attach it as
+		// PersistentPreRun below — cobra calls both.
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			warnInterruptedUpgrade(cmd, args)
+			return nil
+		},
 	}
 
 	// Persistent flags shared by every subcommand. These are intentionally

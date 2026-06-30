@@ -60,6 +60,19 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	skipMigrate := noMigrate || !cfg.Packages.Migrate
 	_ = skipMigrate // referenced below in snapshot/restore sections
 
+	// From here on, anything that mutates disk in a way that needs
+	// replay-by-sentinel bookkeeping is wrapped in a sentinel lifecycle.
+	// We use a flag (rather than os.Exit) so deferred cleanup runs even
+	// on error paths.
+	sentinelArmed := false
+	defer func() {
+		if sentinelArmed {
+			if err := packages.RemoveSentinel(); err != nil {
+				cmd.Printf("Warning: failed to remove upgrade sentinel: %v\n", err)
+			}
+		}
+	}()
+
 	// Detect managers
 	installed := detector.DetectAll()
 	m, err := detector.ResolveManager(installed, managerPref)
@@ -144,6 +157,47 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			if err := packages.Snapshot(ctx, m.Name(), v); err != nil {
 				cmd.Printf("Warning: snapshot failed for %s: %v\n", v, err)
 			}
+		}
+	}
+
+	// Arm the sentinel AFTER snapshots are on disk but BEFORE any
+	// install mutation. If we crash between here and the deferred
+	// cleanup, the sentinel is the "this upgrade was interrupted"
+	// breadcrumb that the next `nodeup` invocation will pick up.
+	//
+	// We point the sentinel at the latest installed version's snapshot
+	// since that is the most likely one we want to replay against —
+	// it contains the package set the user had right before we started
+	// installing the new versions.
+	if !skipMigrate {
+		newVersion := ""
+		if len(toInstall) > 0 {
+			newVersion = toInstall[len(toInstall)-1].String()
+		}
+		oldVersion := ""
+		var snapshotPath string
+		if len(installedVersions) > 0 {
+			last := installedVersions[len(installedVersions)-1]
+			oldVersion = last.String()
+			// Resolve the snapshot path the conventional way so the
+			// warning message can hand it to the user verbatim. We
+			// tolerate a failure here — without a snapshot path the
+			// sentinel is still useful (it tells the user a migration
+			// was in flight) and we don't want to abort the upgrade
+			// over a path-resolution glitch.
+			if p, perr := packages.SnapshotPath(m.Name(), oldVersion); perr == nil {
+				snapshotPath = p
+			}
+		}
+		if err := packages.WriteSentinel(packages.UpgradeSentinel{
+			Manager:      m.Name(),
+			OldVersion:   oldVersion,
+			NewVersion:   newVersion,
+			SnapshotPath: snapshotPath,
+		}); err != nil {
+			cmd.Printf("Warning: failed to write upgrade sentinel: %v\n", err)
+		} else {
+			sentinelArmed = true
 		}
 	}
 
