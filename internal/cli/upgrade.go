@@ -41,10 +41,24 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	noMigrate, _ := cmd.Flags().GetBool("no-migrate")
 	noCleanup, _ := cmd.Flags().GetBool("no-cleanup")
 	_ = noCleanup // TODO: implement cleanup logic in Phase 7
-	managerPref, _ := cmd.Flags().GetString("manager")
+	managerFlag, _ := cmd.Flags().GetString("manager")
 	yes, _ := cmd.Flags().GetBool("yes")
 	_ = yes // TODO: use for non-interactive mode
 	offline, _ := cmd.Flags().GetBool("offline")
+
+	// Load the effective config (defaults < file < env). The --manager
+	// CLI flag, if provided, takes precedence over everything else.
+	cfg, err := loadConfigOrDefault()
+	if err != nil {
+		return err
+	}
+	managerPref := managerFlag
+	if managerPref == "" {
+		managerPref = cfg.Manager
+	}
+	// --no-migrate / --no-cleanup flags beat config; otherwise follow cfg.
+	skipMigrate := noMigrate || !cfg.Packages.Migrate
+	_ = skipMigrate // referenced below in snapshot/restore sections
 
 	// Detect managers
 	installed := detector.DetectAll()
@@ -124,7 +138,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	}
 
 	// Snapshot current packages
-	if !noMigrate {
+	if !skipMigrate {
 		ctx := cmd.Context()
 		for _, v := range installedVersions {
 			if err := packages.Snapshot(ctx, m.Name(), v); err != nil {
@@ -150,7 +164,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	}
 
 	// Restore packages
-	if !noMigrate && len(toInstall) > 0 {
+	if !skipMigrate && len(toInstall) > 0 {
 		ctx := cmd.Context()
 		for _, v := range toInstall {
 			if err := packages.Restore(ctx, m.Name(), *v); err != nil {

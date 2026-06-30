@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/spf13/cobra v1.10.2
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
