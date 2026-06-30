@@ -1,9 +1,11 @@
 package platform
 
 import (
+	"context"
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 // TestDataDirIsUnderUserHome documents and enforces the convention that
@@ -107,6 +109,122 @@ func TestQuotePathWithSpace(t *testing.T) {
 	// Must start with a quote.
 	if got[0] != '"' {
 		t.Errorf("QuotePath did not wrap in double quotes: %q", got)
+	}
+}
+
+// TestQuotePathTable exercises QuotePath across the cases that matter for
+// cross-platform support: spaces, embedded quotes, backslashes (Windows
+// path separators), shell metacharacters on unix ($, `, |), and edges
+// (empty, single space, trailing slash).
+//
+// Expected output is computed by branching on runtime.GOOS because
+// QuotePath uses a different unsafe-char set on Windows vs unix: on
+// Windows only `"` is unsafe; on unix ` "$`<>|'` are all unsafe.
+//
+// We run the same table on every OS so CI catches regressions on all
+// three platforms (ubuntu, macos, windows in our matrix).
+func TestQuotePathTable(t *testing.T) {
+	type tc struct {
+		name string
+		in   string
+		want string
+	}
+
+	// Unix-style cases (forward slashes, no backslashes). On Windows the
+	// unsafe-char set is narrower — backslash is treated as a regular
+	// char and not escaped — so paths containing backslashes are only
+	// valid inputs on Windows. We split the table by OS to keep the
+	// expectations unambiguous.
+	unixCases := []tc{
+		{"empty", "", `""`},
+		{"plain_unix_path", "/usr/local/bin", "/usr/local/bin"},
+		{"single_space", " ", `" "`},
+		{"trailing_space", "/Users/dipto/My App ", `"/Users/dipto/My App "`},
+		{"embedded_space", "/Users/dipto/My App/bin", `"/Users/dipto/My App/bin"`},
+		{"multiple_spaces", "/Users/My  App/bin", `"/Users/My  App/bin"`},
+		{"dollar_sign", "/home/$USER/foo", `"/home/$USER/foo"`},
+		{"backtick", "/tmp/`whoami`/x", "\"/tmp/`whoami`/x\""},
+		{"pipe", "/tmp/a|b/c", `"/tmp/a|b/c"`},
+		{"redirect", "/tmp/a>b/c", `"/tmp/a>b/c"`},
+		{"single_quote", "/tmp/it's/x", `"/tmp/it's/x"`},
+		{"embedded_dquote", `/tmp/oops"quote/x`, `"/tmp/oops\"quote/x"`},
+		{"trailing_slash", "/var/log/", "/var/log/"},
+	}
+	windowsCases := []tc{
+		{"empty", "", `""`},
+		{"plain_windows_path", `C:\node`, `C:\node`},
+		{"single_space", " ", `" "`},
+		{"program_files", `C:\Program Files\nodejs`, `"C:\\Program Files\\nodejs"`},
+		{"trailing_backslash", `C:\Users\Name\App Data\`, `"C:\\Users\\Name\\App Data\\"`},
+		{"embedded_dquote", `C:\tmp\oops"quote`, `"C:\\tmp\\oops\"quote"`},
+		{"plain_forward_slash", "/usr/local/bin", "/usr/local/bin"},
+	}
+
+	cases := unixCases
+	if runtime.GOOS == "windows" {
+		cases = windowsCases
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			got := QuotePath(c.in)
+			if got != c.want {
+				t.Errorf("QuotePath(%q) = %q, want %q (GOOS=%s)",
+					c.in, got, c.want, runtime.GOOS)
+			}
+		})
+	}
+}
+
+// TestQuotePathRoundTrip confirms that the output of QuotePath, when
+// embedded in a shell script, re-evaluates to the original path. We
+// shell out via RunShellScript and `printf '%s'` the quoted form, then
+// compare to the original input.
+//
+// We only test cases that QuotePath is *designed* to protect: paths
+// with spaces, embedded double-quotes, and shell metacharacters that
+// are not subject to variable expansion (|, <, >). Paths containing
+// literal `$` or backticks are intentionally NOT tested here because
+// QuotePath uses double-quotes (preserving shell variable expansion),
+// so a `$` in the path will still be expanded by the shell. See the
+// comment on QuotePath itself for this trade-off.
+func TestQuotePathRoundTrip(t *testing.T) {
+	if runtime.GOOS == "plan9" {
+		t.Skip("plan9 shell semantics differ; skip")
+	}
+	// The round-trip uses RunShellScript, which on Windows invokes
+	// cmd.exe rather than bash. cmd.exe's unquote rules differ from
+	// bash (notably, cmd.exe drops the leading backslash from a
+	// double-quoted path and treats `\"` as a literal `"` followed by
+	// the next char). The test's purpose is to verify QuotePath's
+	// bash-mode quoting, so it is not meaningful on Windows. The
+	// table-driven TestQuotePath already covers the per-OS quoting
+	// logic for both unix and Windows.
+	if runtime.GOOS == "windows" {
+		t.Skip("cmd.exe unquote rules differ from bash; TestQuotePath covers per-OS expected output")
+	}
+	paths := []string{
+		"/Users/dipto/My App",
+		"/Users/Double  Space/bin",
+		"/tmp/oops\"quote/x",
+	}
+	for _, p := range paths {
+		p := p
+		t.Run(p, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			// `printf '%s'` echoes its second argument verbatim.
+			script := "printf '%s' " + QuotePath(p)
+			res, err := RunShellScript(ctx, script)
+			if err != nil {
+				t.Fatalf("RunShellScript(%q): %v", script, err)
+			}
+			if res.Stdout != p {
+				t.Errorf("round-trip mismatch: in=%q quoted=%q got=%q",
+					p, QuotePath(p), res.Stdout)
+			}
+		})
 	}
 }
 
