@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/Masterminds/semver/v3"
@@ -100,7 +99,10 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// Compute plan
 	var toInstall []*semver.Version
 	for _, tv := range targetVersions {
-		v, _ := parseVersion(tv.Version)
+		v, err := parseVersion(tv.Version)
+		if err != nil {
+			return fmt.Errorf("parse target version %q: %w", tv.Version, err)
+		}
 		needsInstall := true
 		for _, iv := range installedVersions {
 			if iv.Equal(v) {
@@ -123,8 +125,9 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	// Snapshot current packages
 	if !noMigrate {
+		ctx := cmd.Context()
 		for _, v := range installedVersions {
-			if err := packages.Snapshot(context.Background(), m.Name(), v); err != nil {
+			if err := packages.Snapshot(ctx, m.Name(), v); err != nil {
 				cmd.Printf("Warning: snapshot failed for %s: %v\n", v, err)
 			}
 		}
@@ -148,8 +151,9 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	// Restore packages
 	if !noMigrate && len(toInstall) > 0 {
+		ctx := cmd.Context()
 		for _, v := range toInstall {
-			if err := packages.Restore(context.Background(), m.Name(), *v); err != nil {
+			if err := packages.Restore(ctx, m.Name(), *v); err != nil {
 				cmd.Printf("Warning: restore failed: %v\n", err)
 			}
 		}
