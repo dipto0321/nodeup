@@ -41,6 +41,12 @@ node_modules/
 package-lock.json
 
 # Tooling session metadata (not part of the project source tree).
-.claude/
+# `.claude/skills/` is intentionally NOT ignored — it holds
+# project-local AI skills (e.g. issue-workflow) that should be
+# committed so any contributor/clone picks them up. Only the rest
+# of `.claude/` (e.g. session settings) is ignored.
+.claude/*
+!.claude/skills/
 
 .conversation-history
+.puku-cli

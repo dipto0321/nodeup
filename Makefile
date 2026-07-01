@@ -96,20 +96,30 @@ verify: ci build ## Full pre-commit verification (CI + build)
 
 # Drive a single GitHub issue from branch → PR → merge.
 # Usage: make next-issue ISSUE=16
-# Requires: gh authed for dipto0321/nodeup, conventional-commits commit on HEAD,
-# clean working tree. See scripts/issue-workflow.sh and [redacted].md
-# ("AI workflow — standing orders") for the full sequence.
+# For human contributors, this is a thin wrapper that prints the
+# standing-orders reminder. The actual orchestration is in the
+# `.claude/skills/issue-workflow/SKILL.md` skill for AI sessions,
+# or driven manually by following CONTRIBUTING.md for humans.
 .PHONY: next-issue
-next-issue: ## Drive the next open issue end-to-end (branch → PR → squash-merge)
+next-issue: ## Print the standing-orders reminder for ISSUE; humans drive the workflow from CONTRIBUTING.md
 	@if [ -z "$(ISSUE)" ]; then \
 		echo "usage: make next-issue ISSUE=<issue#>"; \
 		exit 1; \
 	fi
-	./scripts/issue-workflow.sh start $(ISSUE)
+	@echo "Issue #$(ISSUE) — drive the workflow per CONTRIBUTING.md:"
+	@echo "  1. Sync main and create the branch:"
+	@echo "       git fetch origin main && git checkout main && git pull --ff-only origin main"
+	@echo "       git checkout -b <type>/<scope>/<slug> origin/main"
+	@echo "  2. Implement + test + lint, commit with a Conventional Commits subject"
+	@echo "       make ci"
+	@echo "  3. Push and open the PR:"
+	@echo "       git push -u origin <branch>"
+	@echo "       gh pr create --base main --head <branch> --title '<subject>' --body-file /tmp/pr-body-$(ISSUE).md"
+	@echo "  4. Watch CI and merge:"
+	@echo "       gh pr checks <PR#> --watch --fail-fast"
+	@echo "       make finish-pr ISSUE=$(ISSUE) PR=<PR#>"
 	@echo ""
-	@echo "Now: edit code, then commit with a conventional-commits subject."
-	@echo "When CI is green and you're ready to merge, run:"
-	@echo "  make finish-pr ISSUE=$(ISSUE)"
+	@echo "AI sessions should invoke .claude/skills/issue-workflow/SKILL.md instead."
 
 # Squash-merge the PR linked to ISSUE. Use after the branch is pushed
 # and CI is green. Uses --admin because branch protection requires 1
