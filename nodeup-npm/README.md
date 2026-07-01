@@ -1,18 +1,24 @@
-# nodeup (npm wrapper)
+# nodeup-cli (npm wrapper)
 
 > Thin npm wrapper around the [`nodeup`](https://github.com/dipto0321/nodeup)
 > Go binary. Installs the right static binary for your OS/arch on
-> `npm install -g` and exposes `nodeup` on your `$PATH`.
+> `npm install -g nodeup-cli` and exposes `nodeup` on your `$PATH`.
 
-This directory is the **npm distribution channel** for `nodeup`. It does
-**not** contain the Go tool itself — it downloads the matching binary
-from the [GitHub release](https://github.com/dipto0321/nodeup/releases)
-that this package's `binaryVersion` field points at.
+This directory is the **npm distribution channel** for `nodeup`. The
+package is published as **`nodeup-cli`** because the bare `nodeup`
+name on npmjs.com is owned by an unrelated, dormant 2015 package
+(`romanmt/nodeup`, "a simple cluster implementation for node").
+The downloaded binary still ships as the `nodeup` CLI you know.
+
+It does **not** contain the Go tool itself — it downloads the
+matching binary from the [GitHub
+release](https://github.com/dipto0321/nodeup/releases) that this
+package's `binaryVersion` field points at.
 
 ## Install
 
 ```bash
-npm install -g nodeup
+npm install -g nodeup-cli
 nodeup version
 ```
 
@@ -67,7 +73,7 @@ release bump ship in the same commit.
 ## Updating
 
 ```bash
-npm update -g nodeup
+npm update -g nodeup-cli
 ```
 
 You get a new wrapper version. If that wrapper pins a newer

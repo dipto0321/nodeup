@@ -72,10 +72,12 @@ cd ..
 
 **Required once, not per release:**
 
-- An `npmjs.com` account with publish rights on the `nodeup` package
-  name. The package name must be claimed on npm before the first
-  publish — `npm publish` will fail with `You do not have permission
-  to publish "nodeup"` if it isn't.
+- An `npmjs.com` account with publish rights on the `nodeup-cli`
+  package name. The bare `nodeup` name is owned by an unrelated
+  2015 package (`romanmt/nodeup`, "a simple cluster implementation
+  for node") so we ship under `nodeup-cli`. `npm publish` will fail
+  with `You do not have permission to publish "nodeup-cli"` if the
+  name isn't claimed yet on your account.
 - **2FA enabled** on the npm account. Publishing to npmjs.com
   requires 2FA; configure it under
   `https://www.npmjs.com/settings/<your-username>/security`.
