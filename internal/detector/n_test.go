@@ -452,31 +452,134 @@ func TestN_Detect_FindsBinaryOnPath(t *testing.T) {
 	}
 }
 
-// --- Mutation stubs -----------------------------------------------------
+// --- Mutation methods -------------------------------------------------
 
-func TestN_MutationMethods_NotImplemented(t *testing.T) {
-	// Phase 1: Install / Uninstall / Use / SetDefault /
-	// GlobalNpmPrefix return ErrNNotImplemented. This sentinel
-	// lets callers distinguish "not implemented" from other
-	// errors via errors.Is.
+func TestN_MutationMethodsInvokeShell(t *testing.T) {
+	// n's mutation commands all take a bare `<v>` (no tool prefix).
 	m := NewN()
-	ver, _ := semver.NewVersion("20.0.0")
+	ver, err := semver.NewVersion("22.5.0")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if err := m.Install(*ver); !errors.Is(err, ErrNNotImplemented) {
-		t.Errorf("Install() = %v, want ErrNNotImplemented", err)
+	type tc struct {
+		name    string
+		call    func() error
+		wantArg string
 	}
-	if err := m.Uninstall(*ver); !errors.Is(err, ErrNNotImplemented) {
-		t.Errorf("Uninstall() = %v, want ErrNNotImplemented", err)
+	cases := []tc{
+		{"Install", func() error { return m.Install(*ver) }, "install 22.5.0"},
+		{"Uninstall", func() error { return m.Uninstall(*ver) }, "uninstall 22.5.0"},
+		{"Use", func() error { return m.Use(*ver) }, "22.5.0"},
 	}
-	if err := m.Use(*ver); !errors.Is(err, ErrNNotImplemented) {
-		t.Errorf("Use() = %v, want ErrNNotImplemented", err)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var captured string
+			withStubShell(t,
+				nil,
+				func(req string) (*platform.RunResult, error) {
+					captured = req
+					return &platform.RunResult{}, nil
+				},
+			)
+			if err := c.call(); err != nil {
+				t.Fatalf("%s: unexpected error: %v", c.name, err)
+			}
+			want := "n " + c.wantArg
+			if captured != want {
+				t.Errorf("%s invoked %q, want %q", c.name, captured, want)
+			}
+		})
 	}
-	if err := m.SetDefault(*ver); !errors.Is(err, ErrNNotImplemented) {
-		t.Errorf("SetDefault() = %v, want ErrNNotImplemented", err)
+}
+
+func TestN_SetDefaultIsNoOp(t *testing.T) {
+	// n auto-uses the latest installed version, so SetDefault is a
+	// no-op. We verify it returns nil without invoking the shell.
+	m := NewN()
+	ver, err := semver.NewVersion("22.5.0")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if p, err := m.GlobalNpmPrefix(*ver); !errors.Is(err, ErrNNotImplemented) {
-		t.Errorf("GlobalNpmPrefix() err = %v, want ErrNNotImplemented", err)
-	} else if p != "" {
-		t.Errorf("GlobalNpmPrefix() prefix = %q, want \"\"", p)
+
+	orig := runShell
+	runShell = func(ctx context.Context, name string, a ...string) (*platform.RunResult, error) {
+		t.Fatalf("SetDefault must not invoke runShell for n (called %s %v)", name, a)
+		return nil, nil
+	}
+	t.Cleanup(func() { runShell = orig })
+
+	if err := m.SetDefault(*ver); err != nil {
+		t.Errorf("SetDefault = %v, want nil", err)
+	}
+}
+
+func TestN_Uninstall_PropagatesError(t *testing.T) {
+	wantErr := errors.New("simulated n failure")
+	withStubShell(t, nil, func(req string) (*platform.RunResult, error) {
+		return nil, wantErr
+	})
+
+	v := semver.MustParse("20.0.0")
+	err := NewN().Uninstall(*v)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Errorf("error %v should wrap %v", err, wantErr)
+	}
+}
+
+// --- parseNCurrent ----------------------------------------------------
+
+func TestParseNCurrent_Bare(t *testing.T) {
+	v, err := parseNCurrent("22.11.0\n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v.String() != "22.11.0" {
+		t.Errorf("got %q, want %q", v.String(), "22.11.0")
+	}
+}
+
+func TestParseNCurrent_WithPrefix(t *testing.T) {
+	v, err := parseNCurrent("v22.11.0\n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v.String() != "22.11.0" {
+		t.Errorf("got %q, want %q", v.String(), "22.11.0")
+	}
+}
+
+func TestParseNCurrent_Empty(t *testing.T) {
+	_, err := parseNCurrent("")
+	if err == nil {
+		t.Error("expected error on empty input")
+	}
+}
+
+func TestNCurrent_InvokesShell(t *testing.T) {
+	var captured string
+	withStubShell(t,
+		nil,
+		func(req string) (*platform.RunResult, error) {
+			captured = req
+			if req != "n current" {
+				t.Errorf("unexpected runShell call: %q", req)
+			}
+			return &platform.RunResult{Stdout: "22.11.0\n"}, nil
+		},
+	)
+
+	got, err := NewN().Current()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.String() != "22.11.0" {
+		t.Errorf("got %q, want %q", got.String(), "22.11.0")
+	}
+	if captured == "" {
+		t.Error("expected n current to be invoked")
 	}
 }

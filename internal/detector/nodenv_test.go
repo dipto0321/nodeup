@@ -511,32 +511,115 @@ func TestNodenv_Detect_FindsBinaryOnPath(t *testing.T) {
 	}
 }
 
-// --- Mutation stubs -----------------------------------------------------
+// --- Mutation methods -------------------------------------------------
 
-func TestNodenv_MutationMethods_NotImplemented(t *testing.T) {
-	// Phase 1: Install / Uninstall / Use / SetDefault /
-	// GlobalNpmPrefix return ErrNodenvNotImplemented. This
-	// sentinel lets callers distinguish "not implemented" from
-	// other errors via errors.Is.
+func TestNodenv_MutationMethodsInvokeShell(t *testing.T) {
+	// Nodenv mutation commands all take a bare `<v>` (no plugin
+	// prefix — Nodenv is Node-only, unlike asdf).
 	nd := NewNodenv()
-	ver, _ := semver.NewVersion("20.0.0")
+	ver, err := semver.NewVersion("22.5.0")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if err := nd.Install(*ver); !errors.Is(err, ErrNodenvNotImplemented) {
-		t.Errorf("Install() = %v, want ErrNodenvNotImplemented", err)
+	type tc struct {
+		name    string
+		call    func() error
+		wantArg string
 	}
-	if err := nd.Uninstall(*ver); !errors.Is(err, ErrNodenvNotImplemented) {
-		t.Errorf("Uninstall() = %v, want ErrNodenvNotImplemented", err)
+	cases := []tc{
+		{"Install", func() error { return nd.Install(*ver) }, "install 22.5.0"},
+		{"Uninstall", func() error { return nd.Uninstall(*ver) }, "uninstall 22.5.0"},
+		{"Use", func() error { return nd.Use(*ver) }, "shell 22.5.0"},
+		{"SetDefault", func() error { return nd.SetDefault(*ver) }, "global 22.5.0"},
 	}
-	if err := nd.Use(*ver); !errors.Is(err, ErrNodenvNotImplemented) {
-		t.Errorf("Use() = %v, want ErrNodenvNotImplemented", err)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var captured string
+			withStubShell(t,
+				nil,
+				func(req string) (*platform.RunResult, error) {
+					captured = req
+					return &platform.RunResult{}, nil
+				},
+			)
+			if err := c.call(); err != nil {
+				t.Fatalf("%s: unexpected error: %v", c.name, err)
+			}
+			want := "nodenv " + c.wantArg
+			if captured != want {
+				t.Errorf("%s invoked %q, want %q", c.name, captured, want)
+			}
+		})
 	}
-	if err := nd.SetDefault(*ver); !errors.Is(err, ErrNodenvNotImplemented) {
-		t.Errorf("SetDefault() = %v, want ErrNodenvNotImplemented", err)
+}
+
+func TestNodenv_Uninstall_PropagatesError(t *testing.T) {
+	wantErr := errors.New("simulated nodenv failure")
+	withStubShell(t, nil, func(req string) (*platform.RunResult, error) {
+		return nil, wantErr
+	})
+
+	v := semver.MustParse("20.0.0")
+	err := NewNodenv().Uninstall(*v)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
-	if p, err := nd.GlobalNpmPrefix(*ver); !errors.Is(err, ErrNodenvNotImplemented) {
-		t.Errorf("GlobalNpmPrefix() err = %v, want ErrNodenvNotImplemented", err)
-	} else if p != "" {
-		t.Errorf("GlobalNpmPrefix() prefix = %q, want \"\"", p)
+	if !errors.Is(err, wantErr) {
+		t.Errorf("error %v should wrap %v", err, wantErr)
+	}
+}
+
+// --- parseNodenvCurrent -------------------------------------------------
+
+func TestParseNodenvCurrent_StandardOutput(t *testing.T) {
+	// Real observed output of `nodenv version`:
+	stdout := "22.11.0 (set by /home/user/.nodenv/version)\n"
+	v, err := parseNodenvCurrent(stdout)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v.String() != "22.11.0" {
+		t.Errorf("got %q, want %q", v.String(), "22.11.0")
+	}
+}
+
+func TestParseNodenvCurrent_SystemIsError(t *testing.T) {
+	_, err := parseNodenvCurrent("system\n")
+	if err == nil {
+		t.Error("expected error for 'system' (not a managed version)")
+	}
+}
+
+func TestParseNodenvCurrent_Empty(t *testing.T) {
+	_, err := parseNodenvCurrent("")
+	if err == nil {
+		t.Error("expected error on empty input")
+	}
+}
+
+func TestNodenvCurrent_InvokesShell(t *testing.T) {
+	var captured string
+	withStubShell(t,
+		nil,
+		func(req string) (*platform.RunResult, error) {
+			captured = req
+			if req != "nodenv version" {
+				t.Errorf("unexpected runShell call: %q", req)
+			}
+			return &platform.RunResult{Stdout: "22.11.0 (set by /home/user/.nodenv/version)\n"}, nil
+		},
+	)
+
+	got, err := NewNodenv().Current()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.String() != "22.11.0" {
+		t.Errorf("got %q, want %q", got.String(), "22.11.0")
+	}
+	if captured == "" {
+		t.Error("expected nodenv version to be invoked")
 	}
 }
 

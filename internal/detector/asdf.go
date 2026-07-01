@@ -234,18 +234,148 @@ func parseASDFInstalled(stdout string) ([]semver.Version, error) {
 	return versions, nil
 }
 
-// --- Mutation stubs -----------------------------------------------------
+// --- Mutation methods ----------------------------------------------------
 //
-// Install, Uninstall, Use, SetDefault, and GlobalNpmPrefix return
-// ErrASDFNotImplemented. They will be filled in when the upgrade
-// command (Phase 4) needs to mutate state. Returning an explicit
-// sentinel error (rather than nil) makes "not implemented" provably
-// distinguishable from "succeeded".
+// Install, Uninstall, Use, SetDefault, GlobalNpmPrefix, and Current
+// for ASDF all shell out to the `asdf` binary through runShell.
+//
+// Important ASDF specifics:
+//   - ASDF takes the plugin name as a positional arg: `asdf install
+//     nodejs <v>`, not `asdf install <v>`. The plugin is `nodejs`
+//     (not `node` — Volta/mise use `node` but ASDF uses `nodejs`).
+//   - SetDefault runs `asdf global nodejs <v>` which writes the
+//     `nodejs X.Y.Z` line to ~/.tool-versions. This is what `nodeup
+//     upgrade` calls after Install.
+//   - Use runs `asdf shell nodejs <v>` which sets the version only
+//     for the current shell (via $ASDF_NODEJS_VERSION). Persistence
+//     comes from SetDefault.
+//   - GlobalNpmPrefix points at the per-version global npm modules
+//     directory under $ASDF_DATA_DIR/installs/nodejs/<v>/lib/node_modules.
+//   - Current reads `asdf current nodejs` and parses the version
+//     from the second column.
 
-func (a *ASDF) Install(ver semver.Version) error    { return ErrASDFNotImplemented }
-func (a *ASDF) Uninstall(ver semver.Version) error  { return ErrASDFNotImplemented }
-func (a *ASDF) Use(ver semver.Version) error        { return ErrASDFNotImplemented }
-func (a *ASDF) SetDefault(ver semver.Version) error { return ErrASDFNotImplemented }
+// Install runs `asdf install nodejs <v>`. ASDF's plugin name is
+// `nodejs` (per asdf-nodejs plugin convention).
+func (a *ASDF) Install(ver semver.Version) error {
+	res, err := runShell(context.Background(), "asdf", "install", "nodejs", ver.String())
+	if err != nil {
+		return fmt.Errorf("asdf install nodejs %s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// Uninstall runs `asdf uninstall nodejs <v>`. ASDF allows
+// uninstalling the active version (the next shell call falls back
+// to the system Node or the previous tool-versions pin).
+func (a *ASDF) Uninstall(ver semver.Version) error {
+	res, err := runShell(context.Background(), "asdf", "uninstall", "nodejs", ver.String())
+	if err != nil {
+		return fmt.Errorf("asdf uninstall nodejs %s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// Use runs `asdf shell nodejs <v>` for the current shell. The
+// `asdf shell` subcommand sets the version via the
+// $ASDF_NODEJS_VERSION env var, which only the current shell sees —
+// to persist across sessions, call SetDefault.
+func (a *ASDF) Use(ver semver.Version) error {
+	res, err := runShell(context.Background(), "asdf", "shell", "nodejs", ver.String())
+	if err != nil {
+		return fmt.Errorf("asdf shell nodejs %s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// SetDefault runs `asdf global nodejs <v>` which writes the line
+// `nodejs <v>` to ~/.tool-versions. This is what `nodeup upgrade`
+// calls after Install.
+func (a *ASDF) SetDefault(ver semver.Version) error {
+	res, err := runShell(context.Background(), "asdf", "global", "nodejs", ver.String())
+	if err != nil {
+		return fmt.Errorf("asdf global nodejs %s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// GlobalNpmPrefix returns the per-version global npm directory for
+// the given version. ASDF's on-disk layout is:
+//
+//	$ASDF_DATA_DIR/installs/nodejs/<v>/lib/node_modules
+//
+// We probe the conventional path rather than calling `asdf exec` to
+// avoid spawning a subprocess for a pure path computation. The
+// directory may exist but be unreadable; in that case we return a
+// wrapped error so the migration step can fall back.
 func (a *ASDF) GlobalNpmPrefix(ver semver.Version) (string, error) {
-	return "", ErrASDFNotImplemented
+	dir := asdfDataDir()
+	if dir == "" {
+		return "", errors.New("asdf: cannot resolve ASDF_DATA_DIR or ~/.asdf")
+	}
+	prefix := filepath.Join(dir, "installs", "nodejs", ver.String(), "lib", "node_modules")
+	if _, err := os.Stat(prefix); err != nil {
+		return "", fmt.Errorf("asdf global npm prefix for %s (looked at %s): %w", ver, prefix, err)
+	}
+	return prefix, nil
+}
+
+// Current returns the version ASDF currently has selected. Source:
+// `asdf current nodejs`. The output looks like:
+//
+//	nodejs          22.11.0    (set by /home/user/.tool-versions)
+//	nodejs          20.18.0    (set by /home/user/project/.tool-versions)
+//	nodejs          system     (no installed version)
+//
+// We take the second token (the version column) and feed it to
+// semver.NewVersion. We treat "system" / "None" as errors so the
+// cleanup prompt doesn't try to exclude them.
+func (a *ASDF) Current() (semver.Version, error) {
+	res, err := runShell(context.Background(), "asdf", "current", "nodejs")
+	if err != nil {
+		return semver.Version{}, fmt.Errorf("asdf current nodejs: %w", err)
+	}
+	return parseASDFCurrent(res.Stdout)
+}
+
+// parseASDFCurrent extracts the active version from `asdf current
+// nodejs` output. Exposed (lowercase) for direct unit testing.
+//
+// Real observed output:
+//
+//	nodejs          22.11.0    (set by /home/user/.tool-versions)
+//	nodejs          20.18.0    (set by /home/user/project/.tool-versions)
+//
+// We split each line into tokens. The version is the second token
+// (after `nodejs`). Anything that doesn't parse (including the
+// literal "system") is returned as an error.
+func parseASDFCurrent(stdout string) (semver.Version, error) {
+	for _, raw := range strings.Split(stdout, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		if fields[0] != "nodejs" {
+			continue
+		}
+		if fields[1] == "system" || fields[1] == "None" {
+			// ASDF prints "None" when the tool is unset. Both
+			// cases mean "no active version", so we error out
+			// and let the cleanup prompt skip exclusion.
+			return semver.Version{}, fmt.Errorf("asdf current: %q is not a managed version", fields[1])
+		}
+		v, err := semver.NewVersion(fields[1])
+		if err != nil {
+			return semver.Version{}, fmt.Errorf("asdf current: parse %q: %w", fields[1], err)
+		}
+		return *v, nil
+	}
+	return semver.Version{}, errors.New("asdf current nodejs did not contain a version row")
 }

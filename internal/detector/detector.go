@@ -66,6 +66,15 @@ type Manager interface {
 	// GlobalNpmPrefix returns the directory where npm installs globals
 	// for the given Node.js version. Used to enumerate packages.
 	GlobalNpmPrefix(v semver.Version) (string, error)
+
+	// Current returns the version that is currently active on PATH.
+	// Used by the upgrade command to exclude the active version from
+	// post-upgrade cleanup candidates. May return an error if the
+	// manager has no way to query the active version (e.g.,
+	// nvm-windows — that one returns a sentinel "not implemented"
+	// error). Callers should treat errors as "active version unknown"
+	// and proceed without excluding it.
+	Current() (semver.Version, error)
 }
 
 // Registry holds the list of managers nodeup knows about. It is built

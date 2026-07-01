@@ -77,4 +77,87 @@ bin dir (e.g., `fnm env --use-on-cd | source`, or add
 points at a binary inside the manager's data dir, nodeup's next
 run will classify it as `manager` and proceed without warning.
 
-> _Status: Phase 1 ✅ done — all 8 managers detected · last updated 2026-06-29_
+> _Status: Phase 7 in progress — post-upgrade cleanup + native mutation commands per manager._
+
+## Post-upgrade cleanup
+
+When `nodeup upgrade` finishes installing the new LTS and/or Current
+versions, it asks whether you want to delete the old ones. The
+prompt is enabled by default (so the upgrade doesn't lose data
+silently), but the behavior is configurable.
+
+### Candidates
+
+A version is a **cleanup candidate** if all three are true:
+
+1. The manager has it installed (`<manager> list` / equivalent).
+2. It's NOT one of the versions we just installed (new LTS, new
+   Current).
+3. It's NOT the version that's currently active on your shell. We
+   detect this via `<manager> current` (or `<manager> version`,
+   `<manager> list --format=plain`, etc. — see per-manager table
+   below). If the manager doesn't expose a "current version" query,
+   the exclusion is skipped (better to over-prompt than to leave a
+   broken shell).
+
+For example, if you had 18.20.4, 20.18.0, and 22.11.0 installed and
+upgraded to 22.11.0 (LTS) + 24.15.0 (Current), with 20.18.0 active,
+the candidates are: just **18.20.4**. The new versions and the
+active version are off-limits.
+
+### Flags
+
+| Flag                     | Effect                                                          |
+|--------------------------|-----------------------------------------------------------------|
+| (no flag)                | Prompt: `y` deletes all / typed version deletes one / `N` skips |
+| `--cleanup`              | Skip the prompt; auto-confirm deletion of every candidate       |
+| `--cleanup-version <v>`  | Skip the prompt; only delete the specified versions (repeatable; pairs with `--cleanup`) |
+| `--no-cleanup`           | Skip the prompt AND don't delete anything                       |
+| `--yes`                  | Implies `--cleanup` for non-interactive runs (e.g., CI)         |
+
+Config equivalents (`~/.nodeup/config.yaml`):
+
+```yaml
+cleanup:
+  auto: false   # set true to skip the all-or-nothing prompt
+  prompt: true  # set false to skip per-version confirm
+```
+
+Precedence (highest first):
+
+1. `--no-cleanup` — never prompt, never delete
+2. `--cleanup` (or `cleanup.auto: true` in config) — auto-confirm
+3. `--cleanup-version <v>` — restrict to specific versions
+4. `cleanup.prompt: false` — skip per-version confirm
+5. Default — interactive prompt
+
+### Per-manager behavior
+
+| Manager        | Install cmd                  | Uninstall cmd           | Current query                       | Notes |
+|----------------|------------------------------|--------------------------|--------------------------------------|-------|
+| **fnm**        | `fnm install <v>`            | `fnm uninstall <v>`      | `fnm current`                        | Refuses to uninstall the active version. The prompt excludes it. |
+| **nvm**        | `source nvm.sh && nvm install -s <v>` | `… nvm uninstall <v>` | `… nvm current` (`system` / `none` → "unknown") | Uses `-s` to suppress prompts. |
+| **Volta**      | `volta install node@<v>`     | `volta uninstall node@<v>` | First `node@<v>` row of `volta list --format=plain` | `SetDefault` is a no-op (Volta pins per-project, not per-machine). |
+| **asdf**       | `asdf install nodejs <v>`    | `asdf uninstall nodejs <v>` | `asdf current nodejs`               | Plugin name is `nodejs` (not `node`). |
+| **mise**       | `mise install node@<v>`      | `mise uninstall node@<v>`   | `mise current node`                 | `SetDefault` writes to `~/.config/mise/config.toml` via `mise use --global`. |
+| **n**          | `n install <v>`              | `n uninstall <v>`        | `n current` (n ≥ 8)                  | `SetDefault` is a no-op (n auto-uses the latest install). |
+| **nodenv**     | `nodenv install <v>`         | `nodenv uninstall <v>`   | `nodenv version` (treats `system` as "unknown") | SetDefault writes to `~/.nodenv/version`. |
+| **nvm-windows**| **unsupported**              | **unsupported**          | returns `ErrNVMWindowsNotImplemented` | `nvm-windows` doesn't expose a CLI for install/uninstall — the upgrade command leaves the install list alone and prints a clear note. |
+
+For nvm-windows, the upgrade proceeds normally but the cleanup
+prompt is suppressed with a note: "nvm-windows cleanup is not yet
+implemented — leave the old versions in place or remove them
+manually via `nvm uninstall <v>` from an elevated shell."
+
+### Failure modes
+
+- **Manager not on PATH** — the cleanup step is skipped entirely;
+  the upgrade itself still completes (Install/SetDefault will
+  have already failed loudly if the manager wasn't there).
+- **Uninstall fails** (permission denied, currently-active
+  version, locked file, ...) — we record the failure and continue
+  with the next candidate. The summary at the end lists both
+  successes and failures, so you can clean up the leftovers
+  manually.
+- **Ctrl-C mid-prompt** — we exit cleanly; the upgrade is already
+  done, the prompt is the only thing that gets interrupted.

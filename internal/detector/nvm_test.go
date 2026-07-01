@@ -401,42 +401,112 @@ func TestNVM_ListInstalled_NoNVMDir(t *testing.T) {
 	}
 }
 
-// --- Mutation stubs ----------------------------------------------------
+// --- Mutation methods -------------------------------------------------
 
-func TestNVM_MutationMethodsReturnErrNVMNotImplemented(t *testing.T) {
-	n := NewNVM()
-	// semver.MustParse returns *semver.Version; the Manager interface
-	// declares value receivers so we deref at the call site.
-	v := *semver.MustParse("20.0.0")
+func TestNVM_Install_SourcesAndInvokes(t *testing.T) {
+	// The Install path must (a) source nvm.sh, (b) call `nvm install -s <v>`,
+	// and (c) return nil on a clean exit. We assert all three.
+	withStubNVMScript(t)
+	rec := withStubScript(t, "", nil)
 
-	tests := []struct {
-		name string
-		fn   func() error
-	}{
-		{"Install", func() error { return n.Install(v) }},
-		{"Uninstall", func() error { return n.Uninstall(v) }},
-		{"Use", func() error { return n.Use(v) }},
-		{"SetDefault", func() error { return n.SetDefault(v) }},
+	v := semver.MustParse("22.11.0")
+	if err := NewNVM().Install(*v); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			err := tc.fn()
-			if err == nil {
-				t.Fatalf("%s returned nil, want ErrNVMNotImplemented", tc.name)
-			}
-			if !errors.Is(err, ErrNVMNotImplemented) {
-				t.Errorf("%s returned %v, want errors.Is(_, ErrNVMNotImplemented)", tc.name, err)
-			}
-		})
+	if !strings.Contains(rec.script, "source ") {
+		t.Errorf("script missing source: %q", rec.script)
+	}
+	if !strings.Contains(rec.script, "nvm install -s 22.11.0") {
+		t.Errorf("script missing `nvm install -s 22.11.0`: %q", rec.script)
 	}
 }
 
-func TestNVM_GlobalNpmPrefixReturnsErrNVMNotImplemented(t *testing.T) {
-	n := NewNVM()
-	v := *semver.MustParse("20.0.0")
-	_, err := n.GlobalNpmPrefix(v)
-	if !errors.Is(err, ErrNVMNotImplemented) {
-		t.Errorf("got %v, want errors.Is(_, ErrNVMNotImplemented)", err)
+func TestNVM_Uninstall_SourcesAndInvokes(t *testing.T) {
+	withStubNVMScript(t)
+	rec := withStubScript(t, "", nil)
+
+	v := semver.MustParse("20.0.0")
+	if err := NewNVM().Uninstall(*v); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(rec.script, "nvm uninstall 20.0.0") {
+		t.Errorf("script missing `nvm uninstall 20.0.0`: %q", rec.script)
+	}
+}
+
+func TestNVM_SetDefault_SourcesAndInvokes(t *testing.T) {
+	withStubNVMScript(t)
+	rec := withStubScript(t, "", nil)
+
+	v := semver.MustParse("22.11.0")
+	if err := NewNVM().SetDefault(*v); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(rec.script, "nvm alias default 22.11.0") {
+		t.Errorf("script missing `nvm alias default 22.11.0`: %q", rec.script)
+	}
+}
+
+func TestNVM_Uninstall_PropagatesError(t *testing.T) {
+	// nvm refuses to uninstall the active version — that refusal
+	// must propagate wrapped, so the CLI can show a useful message.
+	withStubNVMScript(t)
+	withStubScript(t, "", errSentinelForTest)
+
+	v := semver.MustParse("20.0.0")
+	err := NewNVM().Uninstall(*v)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, errSentinelForTest) {
+		t.Errorf("error %v should wrap %v", err, errSentinelForTest)
+	}
+}
+
+func TestNVM_Install_NoNVMScript(t *testing.T) {
+	// NVM_DIR pointing at an empty temp dir — no nvm.sh inside.
+	t.Setenv("NVM_DIR", t.TempDir())
+	v := semver.MustParse("22.11.0")
+	if err := NewNVM().Install(*v); err == nil {
+		t.Error("expected error when nvm cannot be located")
+	}
+}
+
+// --- parseNVMCurrent ----------------------------------------------------
+
+func TestParseNVMCurrent_WithPrefix(t *testing.T) {
+	v, err := parseNVMCurrent("v22.11.0\n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v.String() != "22.11.0" {
+		t.Errorf("got %q, want %q", v.String(), "22.11.0")
+	}
+}
+
+func TestParseNVMCurrent_BareVersion(t *testing.T) {
+	v, err := parseNVMCurrent("20.18.0\n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v.String() != "20.18.0" {
+		t.Errorf("got %q, want %q", v.String(), "20.18.0")
+	}
+}
+
+func TestParseNVMCurrent_SystemIsError(t *testing.T) {
+	// "system" is NOT a managed version; we must surface an error so
+	// the cleanup prompt doesn't try to exclude it.
+	_, err := parseNVMCurrent("system\n")
+	if err == nil {
+		t.Error("expected error for 'system' (not a managed version)")
+	}
+}
+
+func TestParseNVMCurrent_Empty(t *testing.T) {
+	_, err := parseNVMCurrent("")
+	if err == nil {
+		t.Error("expected error on empty input")
 	}
 }
 

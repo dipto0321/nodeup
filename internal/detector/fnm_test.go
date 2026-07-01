@@ -247,30 +247,122 @@ func TestFNM_ListInstalled_RunShellError(t *testing.T) {
 	}
 }
 
-func TestFNM_MutationMethodsReturnErrFNMNotImplemented(t *testing.T) {
-	// Phase 1 only implements the detection surface. Mutation methods
-	// must return ErrFNMNotImplemented so callers can distinguish
-	// "not yet implemented" from "succeeded with nil error".
+func TestFNM_MutationMethodsInvokeShell(t *testing.T) {
+	// Phase 4 (the upgrade command) needs the mutation methods to
+	// actually shell out to fnm — not return a stub. Each call
+	// should produce a single runShell invocation with a known argv.
 	f := NewFNM()
 	v, err := semver.NewVersion("22.11.0")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := f.Install(*v); !errors.Is(err, ErrFNMNotImplemented) {
-		t.Errorf("Install: got %v, want ErrFNMNotImplemented", err)
+	type tc struct {
+		name    string
+		call    func() error
+		wantArg string
 	}
-	if err := f.Uninstall(*v); !errors.Is(err, ErrFNMNotImplemented) {
-		t.Errorf("Uninstall: got %v, want ErrFNMNotImplemented", err)
+	cases := []tc{
+		{"Install", func() error { return f.Install(*v) }, "install 22.11.0"},
+		{"Uninstall", func() error { return f.Uninstall(*v) }, "uninstall 22.11.0"},
+		{"Use", func() error { return f.Use(*v) }, "use 22.11.0"},
+		{"SetDefault", func() error { return f.SetDefault(*v) }, "default 22.11.0"},
 	}
-	if err := f.Use(*v); !errors.Is(err, ErrFNMNotImplemented) {
-		t.Errorf("Use: got %v, want ErrFNMNotImplemented", err)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var captured string
+			withStubShell(t,
+				nil,
+				func(req string) (*platform.RunResult, error) {
+					captured = req
+					return &platform.RunResult{}, nil
+				},
+			)
+			if err := c.call(); err != nil {
+				t.Fatalf("%s: unexpected error: %v", c.name, err)
+			}
+			want := "fnm " + c.wantArg
+			if captured != want {
+				t.Errorf("%s invoked %q, want %q", c.name, captured, want)
+			}
+		})
 	}
-	if err := f.SetDefault(*v); !errors.Is(err, ErrFNMNotImplemented) {
-		t.Errorf("SetDefault: got %v, want ErrFNMNotImplemented", err)
+}
+
+func TestFNM_Uninstall_PropagatesError(t *testing.T) {
+	// fnm refuses to uninstall the default; that error must surface
+	// to the caller wrapped, so the CLI can show a useful message
+	// instead of silently leaving the version on disk.
+	wantErr := errors.New("cannot uninstall current version")
+	withStubShell(t, nil, func(req string) (*platform.RunResult, error) {
+		return nil, wantErr
+	})
+
+	v, _ := semver.NewVersion("20.0.0")
+	err := NewFNM().Uninstall(*v)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
-	if _, err := f.GlobalNpmPrefix(*v); !errors.Is(err, ErrFNMNotImplemented) {
-		t.Errorf("GlobalNpmPrefix: got %v, want ErrFNMNotImplemented", err)
+	if !errors.Is(err, wantErr) {
+		t.Errorf("error %v should wrap %v", err, wantErr)
+	}
+}
+
+// --- parseFNMCurrent ----------------------------------------------------
+
+func TestParseFNMCurrent_StandardOutput(t *testing.T) {
+	// Observed on fnm 1.39.0:
+	//   $ fnm current
+	//   v22.11.0
+	v, err := parseFNMCurrent("v22.11.0\n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v.String() != "22.11.0" {
+		t.Errorf("got %q, want %q", v.String(), "22.11.0")
+	}
+}
+
+func TestParseFNMCurrent_BareVersion(t *testing.T) {
+	// Older fnm versions drop the "v" prefix.
+	v, err := parseFNMCurrent("20.18.0\n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v.String() != "20.18.0" {
+		t.Errorf("got %q, want %q", v.String(), "20.18.0")
+	}
+}
+
+func TestParseFNMCurrent_Empty(t *testing.T) {
+	_, err := parseFNMCurrent("")
+	if err == nil {
+		t.Error("expected error on empty input")
+	}
+}
+
+func TestFNMCurrent_InvokesShell(t *testing.T) {
+	var captured string
+	withStubShell(t,
+		nil,
+		func(req string) (*platform.RunResult, error) {
+			captured = req
+			if req != "fnm current" {
+				t.Errorf("unexpected runShell call: %q", req)
+			}
+			return &platform.RunResult{Stdout: "v22.11.0\n"}, nil
+		},
+	)
+
+	got, err := NewFNM().Current()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.String() != "22.11.0" {
+		t.Errorf("got %q, want %q", got.String(), "22.11.0")
+	}
+	if captured == "" {
+		t.Error("expected fnm current to be invoked")
 	}
 }
 

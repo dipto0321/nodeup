@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -30,6 +31,8 @@ migrate your global npm packages across automatically.`,
 	cmd.Flags().Bool("dry-run", false, "show the plan without making changes")
 	cmd.Flags().Bool("no-migrate", false, "skip global package migration")
 	cmd.Flags().Bool("no-cleanup", false, "skip the prompt to remove old versions")
+	cmd.Flags().Bool("cleanup", false, "auto-confirm the post-upgrade cleanup of old versions")
+	cmd.Flags().StringSlice("cleanup-version", nil, "specify version(s) to delete (repeatable; pairs with --cleanup)")
 	cmd.Flags().String("manager", "", "force a specific manager (fnm, nvm, volta, asdf, mise, n, nodenv)")
 	cmd.Flags().BoolP("yes", "y", false, "non-interactive, assume yes to all prompts")
 	cmd.Flags().Bool("offline", false, "use cached data, don't hit nodejs.org")
@@ -43,11 +46,22 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	noMigrate, _ := cmd.Flags().GetBool("no-migrate")
 	noCleanup, _ := cmd.Flags().GetBool("no-cleanup")
-	_ = noCleanup // TODO: implement cleanup logic in Phase 7
+	autoCleanup, _ := cmd.Flags().GetBool("cleanup")
+	cleanupVersionsRaw, _ := cmd.Flags().GetStringSlice("cleanup-version")
 	managerFlag, _ := cmd.Flags().GetString("manager")
 	yes, _ := cmd.Flags().GetBool("yes")
-	_ = yes // TODO: use for non-interactive mode
 	offline, _ := cmd.Flags().GetBool("offline")
+
+	// --cleanup-version must be parseable semvers — fail fast if not,
+	// so a typo doesn't silently delete nothing.
+	cleanupVersions := make([]semver.Version, 0, len(cleanupVersionsRaw))
+	for _, raw := range cleanupVersionsRaw {
+		v, err := parseVersion(raw)
+		if err != nil {
+			return fmt.Errorf("--cleanup-version %q: %w", raw, err)
+		}
+		cleanupVersions = append(cleanupVersions, *v)
+	}
 
 	// Load the effective config (defaults < file < env). The --manager
 	// CLI flag, if provided, takes precedence over everything else.
@@ -62,6 +76,38 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// --no-migrate / --no-cleanup flags beat config; otherwise follow cfg.
 	skipMigrate := noMigrate || !cfg.Packages.Migrate
 	_ = skipMigrate // referenced below in snapshot/restore sections
+
+	// Cleanup behavior toggles. Resolution order (highest first):
+	//   --no-cleanup           : never prompt, never delete
+	//   --cleanup              : auto-delete all (no all-or-nothing prompt)
+	//   --cleanup-version <v>  : delete only these versions
+	//   cfg.Cleanup.Auto       : auto-delete all (no prompt)
+	//   cfg.Cleanup.Prompt=false: skip the per-version confirm
+	//   default                : prompt, one y/N per cleanup action
+	//
+	// The cleanupConfig struct is what runCleanupPrompt consumes.
+	cleanupCfg := cleanupConfig{
+		NonInteractive: noCleanup,
+		PerVersion:     cfg.Cleanup.Prompt,
+		Prefiltered:    cleanupVersions,
+	}
+	switch {
+	case noCleanup:
+		// already set; no other knobs apply
+	case autoCleanup:
+		cleanupCfg.AutoDeleteAll = true
+		cleanupCfg.Prefiltered = cleanupVersions // combine with --cleanup-version if both set
+	case cfg.Cleanup.Auto:
+		cleanupCfg.AutoDeleteAll = true
+		cleanupCfg.Prefiltered = cleanupVersions
+	}
+	// --yes implies auto-delete-all so non-interactive runs don't hang.
+	if yes {
+		cleanupCfg.NonInteractive = false
+		cleanupCfg.AutoDeleteAll = true
+		cleanupCfg.PerVersion = false
+	}
+	_ = yes
 
 	// From here on, anything that mutates disk in a way that needs
 	// replay-by-sentinel bookkeeping is wrapped in a sentinel lifecycle.
@@ -238,6 +284,51 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			if err := packages.Restore(ctx, m.Name(), *v); err != nil {
 				cmd.Printf("Warning: restore failed: %v\n", err)
 			}
+		}
+	}
+
+	// Post-upgrade cleanup prompt. Phase 7: after a successful
+	// upgrade, ask the user whether to delete old versions. We
+	// exclude the versions we just installed and the currently-
+	// active version (if we can detect it).
+	if !cleanupCfg.NonInteractive {
+		// Best-effort detection of the currently-active version.
+		// A failure here is non-fatal: we just skip the exclusion
+		// rather than aborting a successful upgrade.
+		var active semver.Version
+		if cur, cerr := m.Current(); cerr == nil {
+			active = cur
+		}
+
+		// Build a values slice from the toInstall pointers so the
+		// cleanup helpers (which take []semver.Version) don't have
+		// to special-case pointers.
+		newVersions := make([]semver.Version, 0, len(toInstall))
+		for _, v := range toInstall {
+			newVersions = append(newVersions, *v)
+		}
+
+		// Use cmd.IO for stdin/stdout when available; fall back to
+		// os.Stdin / cmd.OutOrStdout() so non-interactive shells
+		// still work. We deliberately do NOT use cmd.SetIn/SetOut
+		// (test injection happens via the io package).
+		result, cerr := runCleanupPrompt(
+			cleanupCfg,
+			newVersions,
+			installedVersions,
+			active,
+			m,
+			cleanupIO{
+				in:  bufio.NewReader(cmd.InOrStdin()),
+				out: cmd.OutOrStdout(),
+			},
+		)
+		if cerr != nil {
+			// Non-fatal: log and proceed to the success message.
+			cmd.Printf("Warning: cleanup encountered an error: %v\n", cerr)
+		}
+		if summary := formatCleanupResult(result); summary != "" {
+			cmd.Printf("Cleanup: %s\n", summary)
 		}
 	}
 
