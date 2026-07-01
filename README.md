@@ -189,13 +189,15 @@ This is the **v1.0.0 development line**. See `CHANGELOG.md` for what's done.
 
 | Version | Status | Notes |
 |---|---|---|
-| v1.0.0 | 🛠 in development | Phase 1 ✅ — 8/8 managers detected. Phase 2 ✅ — `nodeup check` with nodejs.org/dist/index.json fetch + TTL cache. Phase 3 ✅ — package snapshot/restore + migration report. Phase 4 ✅ — end-to-end `nodeup upgrade`. Phase 5 ✅ — YAML config file + `config` subcommands (show / get / set / init). |
+| v1.0.0 | 🛠 in development | Phase 1 ✅ — 8/8 managers detected. Phase 2 ✅ — `nodeup check` with nodejs.org/dist/index.json fetch + TTL cache. Phase 3 ✅ — package snapshot/restore + migration report. Phase 4 ✅ — end-to-end `nodeup upgrade`. Phase 5 ✅ — YAML config file + `config` subcommands (show / get / set / init). Phase 6 ✅ — cross-platform polish: `QuotePath` for paths with spaces, interrupted-upgrade sentinel + replay, system-node classifier with warnings. Phase 7 (GoReleaser config + brew/scoop taps + npm wrapper) is the remaining work — see issues #17 and #18. |
 
 Phase 1 is the **detection surface** — every manager is recognized and the
 version + installed-list reads return real data (PRs #1–#8). Subsequent
 phases layer commands on top: `nodeup check` (Phase 2) → `nodeup packages`
 (Phase 3) → `nodeup upgrade` end-to-end (Phase 4) → `nodeup config`
-(Phase 5) → first tagged release (Phase 7).
+(Phase 5) → cross-platform polish (Phase 6) → first tagged release
+(Phase 7). The v1.0.0 cut is blocked on Phase 7 (issue #17) and the
+release-prep runbook (issue #18).
 
 ## Docs index
 

@@ -34,10 +34,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `loadConfigOrDefault()`: `--manager` flag still wins over the file
   value, and `cfg.Packages.Migrate` replaces the hard-coded `true`
   so users can opt out globally.
-- `scripts/issue-workflow.sh`: issue→branch→PR→squash-merge automation
-  script (bug-fix in the same change: fixed the bash regex parser
-  that was rejecting valid issue titles because space-separated
-  alternations aren't valid ERE).
+- System-node classifier (`internal/detector/system_node.go`):
+  classifies the `node` binary on PATH into one of `os-package`,
+  `snap`, `flatpak`, `homebrew-core`, `manager`, or `unknown`, and
+  surfaces a one-paragraph warning when the binary is one nodeup
+  cannot (or should not) manage. Wired into `nodeup upgrade`
+  (warning to stderr, after manager resolution) and `nodeup check`
+  (rendered into the table output and the `--json` envelope).
+  Manager-data-dir overrides (e.g. `NVM_DIR=/usr/local/nvm`) take
+  precedence so a manager install inside an OS-shaped directory is
+  still classified as `manager`. Closes #27.
+- Interrupted-upgrade detection and replay: when `nodeup upgrade`
+  snapshots packages at the start of a run, it writes a sentinel
+  file recording the manager, the pre-upgrade version, and the
+  snapshot path. If a subsequent run finds a leftover sentinel, it
+  prompts the user to replay the package migration against the
+  snapshot (PR #29). `nodeup packages restore` accepts a
+  `--from <snapshot-path>` flag for restoring from a non-default
+  location, mirroring the sentinel's stored path.
+- Cross-platform path handling: `internal/platform.QuotePath` now
+  enforces consistent shell-quoting across all `RunShell` callsites,
+  so paths containing spaces (e.g. `C:\Users\Dipto Karmakar\...`)
+  are passed through unmodified on Windows and double-quoted on POSIX
+  shells. The previous behavior leaked the un-quoted path through
+  nvm's `RunShell` call on Windows, breaking installs into
+  space-containing paths. Closes #25.
 
 ### Changed
 - Consolidated the internal `nodeup.md` design doc into `README.md`
@@ -60,41 +81,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   literal `false`, so `LatestLTS`/`LatestCurrent` could return the
   wrong row. Now both paths share one field and one decoder.
 
-### Added
-- Node.js versions API client (`internal/node`): fetch nodejs.org/dist/index.json with 24h TTL cache, LatestLTS and LatestCurrent resolvers
-- `nodeup check` command: displays available LTS and Current versions with optional --json and --offline flags
-- `nodeup upgrade` command (end-to-end): detect manager → resolve target
-  LTS/Current → compute install plan (with `--dry-run`) → snapshot
-  installed globals → install new versions → set default → restore
-  packages. Supports `--lts` / `--current` to restrict, `--manager` to
-  override detection, `--no-migrate` to skip package migration, and
-  `--offline` to use the cached manifest.
-- Package snapshot/restore (`internal/packages`): capture and restore global npm packages across Node versions
-- Migration report: per-package result tracking with ok/failed/skipped status
-- `nodeup packages snapshot`: snapshot the active version's global npm packages
-- `nodeup packages list`: list all saved snapshots
-- `nodeup packages restore <manager> <version>`: restore packages from a snapshot
-- `nodeup packages diff <manager> <v1> <v2>`: compare two snapshots
-- Initial project scaffolding (`chore: initial project scaffolding`)
-- Cobra-based CLI with `upgrade`, `check`, `list`, `packages`, `config`, `version` subcommands
-- Manager interface (`internal/detector`) covering `fnm`, `nvm`, `Volta`, `asdf`, `mise`, `n`, `nodenv`, and (Windows) `nvm-windows`
-- Cross-platform helpers (`internal/platform`): data dir resolution, shell execution, concurrency lock
-- GitHub Actions CI: golangci-lint, commitlint, cross-OS tests, cross-arch build matrix
-- Release workflow: GoReleaser v2 → GitHub Release + Homebrew tap + Scoop bucket
-- Conventional Commits enforcement via commitlint
-- golangci-lint config (`errcheck`, `staticcheck`, `gocritic`, etc.)
-- Makefile with `build`, `test`, `lint`, `fmt`, `ci`, `release-snap`, `release` targets
-- GoReleaser config: 6 platform archives, SHA256, Homebrew tap, Scoop bucket
-- System-node classifier (`internal/detector/system_node.go`):
-  classifies the `node` binary on PATH into one of `os-package`,
-  `snap`, `flatpak`, `homebrew-core`, `manager`, or `unknown`, and
-  surfaces a one-paragraph warning when the binary is one nodeup
-  cannot (or should not) manage. Wired into `nodeup upgrade`
-  (warning to stderr, after manager resolution) and `nodeup check`
-  (rendered into the table output and the `--json` envelope).
-  Manager-data-dir overrides (e.g. `NVM_DIR=/usr/local/nvm`)
-  take precedence so a manager install inside an OS-shaped
-  directory is still classified as `manager`. Closes #27.
+### Removed
+- `scripts/issue-workflow.sh` (the bash issue→branch→PR→squash-merge
+  orchestrator) has been replaced by the project-local
+  `.claude/skills/issue-workflow/SKILL.md` skill. The skill encodes
+  the same workflow as AI-orchestrated `TaskCreate` steps so the
+  editor doesn't have to shell out to a 265-line bash script. The
+  previous entry in this changelog referencing the bash script is
+  intentionally not duplicated here — see the squash-merged commit
+  `chore(ci): replace issue-workflow.sh shell script with an AI skill`
+  for the full rationale.
 
 ## [0.0.0] - 2024-07-01
 
