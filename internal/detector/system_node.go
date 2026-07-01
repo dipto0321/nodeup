@@ -52,9 +52,9 @@ const (
 )
 
 // String returns a human-readable label for the kind, suitable for
-// the `nodeup upgrade` and `nodeup check` output. Empty string
-// for SystemNodeUnknown is deliberate — callers should switch on
-// the value rather than stringify it.
+// the `nodeup upgrade` and `nodeup check` output. SystemNodeUnknown
+// stringifies to "unknown"; callers wanting a non-string comparison
+// should switch on the enum value directly.
 func (k SystemNodeKind) String() string {
 	switch k {
 	case SystemNodeOSPackage:
@@ -103,27 +103,23 @@ var ErrNoNodeOnPATH = errors.New("`node` not found on PATH")
 // caller prefers the path when non-empty, the error when path is
 // empty. (This matches the LookupManagerBinary convention.)
 var whichNode = func(ctx context.Context) (string, error) {
-	// Windows `where` and unix `which` have different output shapes;
-	// we want "the first line" from either. Both exit 0 when found
-	// and non-zero when not.
-	var name string
-	var args []string
-	if runtime.GOOS == "windows" {
-		name = "where"
-		args = []string{"node"}
-	} else {
-		name = "which"
-		args = []string{"node"}
-	}
-	out, err := exec.CommandContext(ctx, name, args...).Output()
-	if err != nil {
+	// exec.LookPath walks PATH itself, so we don't depend on the
+	// `which`/`where` shell-outs being present. On minimal images
+	// (e.g., distroless containers, alpine installs) those commands
+	// may be absent even though `node` is on PATH — using LookPath
+	// avoids that failure mode. It also returns an absolute path
+	// directly, with no first-line parsing.
+	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	line := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
-	if line == "" {
-		return "", fmt.Errorf("%w: empty output from %s", ErrNoNodeOnPATH, name)
+	p, err := exec.LookPath("node")
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrNoNodeOnPATH, err)
 	}
-	return line, nil
+	if p == "" {
+		return "", ErrNoNodeOnPATH
+	}
+	return p, nil
 }
 
 // ResolveSystemNode locates `node` on PATH, classifies it by where it
@@ -211,12 +207,16 @@ func classifySystemNodePath(p string) SystemNodeKind {
 		return SystemNodeFlatpak
 	case isUnder(s, "/usr/local/Cellar/node/"), isUnder(s, "/opt/homebrew/Cellar/node/"):
 		return SystemNodeHomebrewCore
-	case strings.HasPrefix(s, "/usr/local/bin/") && looksLikeHomebrewCoreLayout(s):
-		// `/usr/local/bin/node` is a wrapper that ultimately points
-		// at /usr/local/Cellar/node/<v>/bin/node. Some Homebrew
-		// installs put the wrapper directly inside /usr/local/bin
-		// without the symlink chain showing the Cellar prefix; the
-		// suffix check picks that up.
+	case strings.HasPrefix(s, "/usr/local/bin/") && runtime.GOOS == "darwin" && looksLikeHomebrewCoreLayout(s):
+		// `/usr/local/bin/node` is the Homebrew wrapper symlink that
+		// ultimately points at /usr/local/Cellar/node/<v>/bin/node.
+		// We restrict this branch to macOS because on Linux,
+		// `/usr/local/bin/node` is overwhelmingly a manual compile
+		// (`make install`) — Homebrew on Linux lives at
+		// /home/linuxbrew/.linuxbrew/bin/node (handled below), not
+		// /usr/local/bin/. Misclassifying the manual install as
+		// homebrew-core would tell the user to run `brew upgrade`,
+		// which doesn't exist on their system.
 		return SystemNodeHomebrewCore
 	case strings.HasPrefix(s, "/opt/homebrew/bin/"), strings.HasPrefix(s, "/opt/homebrew/opt/node/"), strings.HasPrefix(s, "/home/linuxbrew/.linuxbrew/bin/"):
 		// Apple Silicon Homebrew and Linuxbrew both land here.
@@ -264,12 +264,11 @@ func classifySystemNodePath(p string) SystemNodeKind {
 	return SystemNodeUnknown
 }
 
-// looksLikeHomebrewCoreLayout returns true when /usr/local/bin/node
-// (or any other /usr/local path) looks like it's the Homebrew
-// wrapper rather than a plain "compiled and dropped into /usr/local"
-// install. We use the presence of the parent bin-only layout as
-// the discriminator: real Homebrew has /usr/local/bin/<name> →
-// ../Cellar/<formula>/<ver>/bin/<name> symlinks.
+// looksLikeHomebrewCoreLayout returns true when a path under
+// /usr/local looks like it's the Homebrew wrapper rather than a
+// plain "compiled and dropped into /usr/local" install. The
+// caller is responsible for restricting this to darwin — Linux's
+// /usr/local/bin is overwhelmingly a manual-install location.
 //
 // Without evaluating the symlink itself (which is sensitive to the
 // user's actual filesystem), we approximate with the directory
@@ -277,14 +276,13 @@ func classifySystemNodePath(p string) SystemNodeKind {
 // only when the path matches patterns we know Homebrew uses:
 //
 //   - /usr/local/bin/node                       (wrapper symlink)
-//   - /usr/local/Cellar/node/<ver>/bin/node     (real binary)
 //
-// The earlier Cellar prefix check has already handled the second
-// case; this helper exists to confirm the first. In practice we
-// return true unconditionally for /usr/local/bin/node because the
-// "compiled into /usr/local by hand" failure mode is rare on macOS
-// where Homebrew dominates, and Intel-mac Homebrew installs
-// almost always use /usr/local.
+// The earlier Cellar prefix check in classifySystemNodePath has
+// already handled the real-binary case (/usr/local/Cellar/node/...);
+// this helper exists to confirm the wrapper. On Intel macOS,
+// Homebrew always uses /usr/local/bin/node as its wrapper, so any
+// path ending in /bin/node under /usr/local is taken to mean the
+// Homebrew shim.
 func looksLikeHomebrewCoreLayout(s string) bool {
 	// Any path ending in /bin/node under /usr/local is the
 	// Homebrew wrapper. Without that suffix (e.g., /usr/local/bin/
