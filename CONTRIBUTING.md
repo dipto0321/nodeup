@@ -83,9 +83,11 @@ config.manager=<name> explicitly, or omit the key for auto-detect.
    fine (use `--force-with-lease`).
 7. **Every PR must reference its source issue in the body** — use
    `Closes #N` (closing the issue on merge) or `Refs #N` (linked but
-   not auto-closed). The `scripts/issue-workflow.sh pr-body` template
-   fills this in automatically from the issue number; do not strip it.
-   A PR without an issue reference will be sent back for revision.
+   not auto-closed). The
+   [`.claude/skills/issue-workflow`](./.claude/skills/issue-workflow/SKILL.md)
+   skill fills this in automatically from the issue number when the
+   AI generates the PR body; do not strip it. A PR without an issue
+   reference will be sent back for revision.
 
 ## Local development
 
