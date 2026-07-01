@@ -11,10 +11,18 @@ nodeup.md
 *.out
 coverage.txt
 coverage.html
+coverage.out
 *.coverprofile
 vendor/
 .idea/
 .vscode/
+
+# `make build` writes the nodeup binary here. Gitignored so local
+# builds don't show up as untracked on every `git status`. The
+# npm wrapper's `install.js` populates a *different* `bin/` under
+# `nodeup-npm/node_modules/` — that one is in `nodeup-npm/.npmignore`,
+# not here.
+bin/
 
 # GoReleaser
 dist/
