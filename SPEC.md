@@ -113,7 +113,7 @@ T14|.|fail closed (not open) when Current() errors during cleanup|V14,#58
 T15|.|verify/fix `n` manager's reliance on `n current` subcommand|#59
 T16|.|fix cleanup docs inaccuracies (CHANGELOG issue ref, nvm-windows note, PATH failure mode, Phase 7 conflict)|#60
 T17|.|dead-code cleanup: report.go, FileOverlay(), confirm var, fnm.go error wrap, nvm Current() test gap|#61
-T18|.|design + implement internal/ui output layer|V2
+T18|.|design + implement internal/ui output layer|V2,#74
 
 ## §B Bugs
 
