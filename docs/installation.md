@@ -25,7 +25,7 @@ exactly what to run.
 |---|---|---|---|---|---|
 | **Homebrew** | `brew install dipto0321/tap/nodeup` | Yes — `brew upgrade` | `/opt/homebrew/bin/` (macOS) or `/home/linuxbrew/.linuxbrew/bin/` (Linux) | macOS / Linux devs already using Homebrew for tooling | You don't have Homebrew and don't want to set it up just for one tool |
 | **Scoop** | `scoop install nodeup` (after adding the bucket) | Yes — `scoop update` | `%USERPROFILE%\scoop\apps\nodeup\` | Windows devs already using Scoop | You prefer winget / Chocolatey — neither is wired up today |
-| **npm wrapper** | `npm install -g nodeup` | Semi — `npm update -g nodeup` only when a wrapper version bumps | Inside a Node install, on your global `node_modules/` path | JS devs who already treat `npm i -g` as the source of truth for CLIs; locked-down machines that block system installers but allow npm globals | You want a CLI that lives completely outside any Node install, or you want to track Go-binary releases the moment they tag (the wrapper lags by one publish) |
+| **npm wrapper** | `npm install -g nodeup-cli` | Semi — `npm update -g nodeup-cli` only when a wrapper version bumps | Inside a Node install, on your global `node_modules/` path | JS devs who already treat `npm i -g` as the source of truth for CLIs; locked-down machines that block system installers but allow npm globals | You want a CLI that lives completely outside any Node install, or you want to track Go-binary releases the moment they tag (the wrapper lags by one publish). **Note**: the package is `nodeup-cli`, not `nodeup` — `nodeup` is taken on npmjs.com. |
 | **Direct binary** | `curl … \| tar xz` | No — you re-run to update | Wherever you put the extracted binary | CI pipelines, reproducible installs, lock-down environments without npm or brew | You want auto-updates; you'll forget to re-run |
 | **From source** | `go install ./cmd/nodeup@latest` | No — re-run against a new tag | `$GOBIN` or `$GOPATH/bin` | `nodeup` contributors and Go developers who want HEAD | Anyone who doesn't have Go installed and isn't trying to hack on the tool |
 
@@ -68,8 +68,14 @@ holds the manifest and is auto-pushed by GoReleaser.
 ### npm wrapper (any platform with Node ≥ 14)
 
 ```bash
-npm install -g nodeup
+npm install -g nodeup-cli
 ```
+
+The package is published as **`nodeup-cli`**, not `nodeup`, because
+the bare `nodeup` name on npmjs.com is owned by an unrelated,
+dormant 2015 package (`romanmt/nodeup` — "a simple cluster
+implementation for node"). The downloaded binary still installs as
+the `nodeup` CLI on your `$PATH`.
 
 **Who this is for:** developers who already treat `npm install -g` as
 the canonical way to install CLIs. Common in JavaScript-heavy
@@ -81,7 +87,7 @@ blocked but npm globals are allowed.
 
 - **Slight version lag.** The wrapper pins to the Go-binary version
   in its `binaryVersion` field. A new Go release needs a new wrapper
-  publish — `npm update -g nodeup` only gets you a new Go binary
+  publish — `npm update -g nodeup-cli` only gets you a new Go binary
   after the wrapper version that pins to it ships. To jump to a
   brand-new release ahead of that, use a direct-binary install.
 - **Coupled to a Node install.** The wrapper and binary live inside
@@ -161,7 +167,7 @@ and uninstalls consistently:
 
 - **Homebrew** owns upgrades → use `brew upgrade nodeup`.
 - **Scoop** owns upgrades → use `scoop update nodeup`.
-- **npm** owns upgrades → use `npm update -g nodeup`.
+- **npm** owns upgrades → use `npm update -g nodeup-cli`.
 - **Direct binary** owns upgrades → re-run the curl one-liner (or
   pin a specific tag in CI).
 - **From source** owns upgrades → `go install -u
