@@ -42,3 +42,5 @@ package-lock.json
 
 # Tooling session metadata (not part of the project source tree).
 .claude/
+
+.conversation-history

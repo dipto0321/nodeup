@@ -85,6 +85,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - golangci-lint config (`errcheck`, `staticcheck`, `gocritic`, etc.)
 - Makefile with `build`, `test`, `lint`, `fmt`, `ci`, `release-snap`, `release` targets
 - GoReleaser config: 6 platform archives, SHA256, Homebrew tap, Scoop bucket
+- System-node classifier (`internal/detector/system_node.go`):
+  classifies the `node` binary on PATH into one of `os-package`,
+  `snap`, `flatpak`, `homebrew-core`, `manager`, or `unknown`, and
+  surfaces a one-paragraph warning when the binary is one nodeup
+  cannot (or should not) manage. Wired into `nodeup upgrade`
+  (warning to stderr, after manager resolution) and `nodeup check`
+  (rendered into the table output and the `--json` envelope).
+  Manager-data-dir overrides (e.g. `NVM_DIR=/usr/local/nvm`)
+  take precedence so a manager install inside an OS-shaped
+  directory is still classified as `manager`. Closes #27.
 
 ## [0.0.0] - 2024-07-01
 
