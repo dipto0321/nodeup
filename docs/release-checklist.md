@@ -56,15 +56,16 @@ cd nodeup-npm
 npm pack --dry-run
 cd ..
 
-# 2. Log in to npmjs.com (one-time per machine; uses your npm account
-#    credentials + email/password). After 2FA is enabled on the
-#    account, `npm login` will ask for a one-time code from your
-#    authenticator.
+# 2. Log in to npmjs.com. Since the Dec 2025 token changes,
+#    `npm login` produces a short-lived session token (~2 hours)
+#    rather than a long-lived classic token, so re-login is normal
+#    after breaks. It will prompt for an OTP from your
+#    authenticator app.
 npm login
 
-# 3. From the wrapper directory, publish. npm will prompt for the
-#    OTP code on publish (not on login) — keep your authenticator
-#    open.
+# 3. From the wrapper directory, publish. npm prompts for a fresh
+#    OTP at publish time (separate from the login OTP) — keep your
+#    authenticator open.
 cd nodeup-npm
 npm publish
 cd ..
@@ -78,23 +79,88 @@ cd ..
   for node") so we ship under `nodeup-cli`. `npm publish` will fail
   with `You do not have permission to publish "nodeup-cli"` if the
   name isn't claimed yet on your account.
-- **2FA enabled** on the npm account. Publishing to npmjs.com
-  requires 2FA; configure it under
-  `https://www.npmjs.com/settings/<your-username>/security`.
-  Authenticator-app mode (`Authenticator` level) is the minimum —
-  SMS and email-only modes are not accepted for publish.
+- **2FA enabled** on the npm account, with an authenticator-app
+  factor (TOTP). Configure under
+  `https://www.npmjs.com/settings/<your-username>/security` →
+  Two-Factor Authentication → **Authenticator app**. SMS and
+  email-only are not accepted for publish. Save the recovery codes
+  in your password manager.
 
 **Repeat for every wrapper version bump.** The flow is the same
 when the wrapper pins to a new `binaryVersion`: confirm the GitHub
 release exists, `npm pack --dry-run`, then `npm publish`.
 
-**Can I automate it?** Yes, but not for the very first publish. Add
-a repo secret `NPM_TOKEN` (a publish-only automation token from
-`https://www.npmjs.com/settings/<your-username>/tokens`) and a
-release workflow step that runs `npm publish` from `nodeup-npm/` on
-tag push. Until you've done at least one manual publish to confirm
-the package name and the account are wired up, keep this step in
-the human checklist.
+**Can I automate it?** Yes, but not for the very first publish. The
+current npm auth model (since the Dec 9, 2025 token changes)
+offers two options — pick one before wiring up `release.yml`:
+
+**Option A — OIDC Trusted Publishing (recommended).** GitHub
+Actions can publish without a long-lived secret. The runner
+exchanges its built-in OIDC token for a one-hour publish token
+scoped to the `nodeup-cli` package. Per-package config lives in
+npm's "Trusted Publisher" UI.
+
+1. After the first manual `npm publish` succeeds, open
+   <https://www.npmjs.com/package/nodeup-cli/access> (or the
+   "Trust" tab on the package page) and add a trusted publisher:
+   - Provider: **GitHub Actions**
+   - Repository: `dipto0321/nodeup`
+   - Workflow: `release.yml`
+   - Environment: *(leave blank unless you use one)*
+2. Add a publish step to `.github/workflows/release.yml` after
+   the GoReleaser job:
+
+   ```yaml
+   - name: Publish npm wrapper (OIDC)
+     if: startsWith(github.ref, 'refs/tags/v')
+     working-directory: ./nodeup-npm
+     run: npm publish --provenance --access public
+   ```
+
+   No secret is needed. The OIDC exchange happens automatically
+   when `GITHUB_TOKEN` is present. The publish token is short-lived
+   (~1 hour) and tied to a specific workflow run, so leaking it is
+   not a concern.
+
+**Option B — Granular access token as `NPM_TOKEN`.** Browser-only
+flow (npm doesn't yet support granular-token creation via the CLI
+as of writing). Use this if you want to keep auth out of GitHub
+Actions entirely, or if you're publishing from a non-GitHub CI.
+
+1. Go to
+   <https://www.npmjs.com/settings/<your-username>/tokens> and
+   click **Generate New Token**.
+2. Fill in:
+   - **Name / description**: e.g. `nodeup-cli-ci-publish`
+   - **Expiration**: 30 days (granular tokens max out at 90 days;
+     rotate before expiry)
+   - **Packages and scopes**: select `nodeup-cli` only (not `*`,
+     not unscoped — limit the blast radius)
+   - **Permissions**: `Read and write` on packages
+   - **Bypass 2FA**: ON (so the CI publish doesn't need an OTP)
+3. The token shows once. Copy it.
+4. Add it as a repo secret:
+
+   ```bash
+   gh secret set NPM_TOKEN --repo dipto0321/nodeup
+   # paste the token at the prompt
+   ```
+
+5. Add a publish step that uses it:
+
+   ```yaml
+   - name: Publish npm wrapper (token)
+     if: startsWith(github.ref, 'refs/tags/v')
+     working-directory: ./nodeup-npm
+     run: npm publish --provenance --access public
+     env:
+       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+   ```
+
+**Which one?** A unless you have a reason for B. A leaves no
+secret to rotate, no scope to limit, and no token to leak. B
+exists for non-GitHub CI and for when you want a human-readable
+audit trail of which token published which version.
 
 ## Post-release
 
