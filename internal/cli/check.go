@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/spf13/cobra"
@@ -10,6 +11,18 @@ import (
 	"github.com/dipto0321/nodeup/internal/detector"
 	"github.com/dipto0321/nodeup/internal/node"
 )
+
+// systemNodeJSON describes the on-disk `node` binary found on PATH,
+// if any. Marshal-safe so it can sit inside the top-level check
+// JSON envelope. nil in the envelope means "not probed" or "no
+// node on PATH", distinguishing that from `path == ""` which can
+// only arise if the probe itself succeeded but returned an empty
+// path (a defensive guard we don't expect to surface).
+type systemNodeJSON struct {
+	Path    string `json:"path"`
+	Kind    string `json:"kind"`
+	Manager string `json:"manager,omitempty"`
+}
 
 // newCheckCmd implements `nodeup check` — show available LTS and Current versions.
 // It fetches the nodejs.org/dist/index.json manifest and compares against
@@ -61,18 +74,33 @@ func runCheck(cmd *cobra.Command, args []string) error {
 	// Get installed versions if a manager is available
 	installed := detector.DetectAll()
 
-	if asJSON {
-		return outputCheckJSON(cmd, lts, current, installed)
+	// Probe `node` on PATH and classify how it's installed. We pass
+	// nil for the manager here — `check` doesn't pick a manager
+	// (that's `upgrade`'s job) and the classifier still works from
+	// path patterns alone. The warning text is captured for both
+	// the JSON envelope and the table renderer.
+	var sysNode *systemNodeJSON
+	if info, err := detector.ResolveSystemNode(cmd.Context(), nil); err == nil {
+		sysNode = &systemNodeJSON{
+			Path:    info.Path,
+			Kind:    info.Kind.String(),
+			Manager: info.Manager,
+		}
 	}
 
-	return outputCheckTable(cmd, lts, current, installed)
+	if asJSON {
+		return outputCheckJSON(cmd, lts, current, installed, sysNode)
+	}
+
+	return outputCheckTable(cmd, lts, current, installed, sysNode)
 }
 
-func outputCheckJSON(cmd *cobra.Command, lts, current *node.ManifestVersion, installed detector.Registry) error {
+func outputCheckJSON(cmd *cobra.Command, lts, current *node.ManifestVersion, installed detector.Registry, sysNode *systemNodeJSON) error {
 	type checkOutput struct {
-		LTS       *node.ManifestVersion `json:"lts"`
-		Current   *node.ManifestVersion `json:"current"`
-		Installed []string              `json:"installed"`
+		LTS        *node.ManifestVersion `json:"lts"`
+		Current    *node.ManifestVersion `json:"current"`
+		Installed  []string              `json:"installed"`
+		SystemNode *systemNodeJSON       `json:"systemNode,omitempty"`
 	}
 
 	installedVersions := make([]string, 0)
@@ -87,9 +115,10 @@ func outputCheckJSON(cmd *cobra.Command, lts, current *node.ManifestVersion, ins
 	}
 
 	out := checkOutput{
-		LTS:       lts,
-		Current:   current,
-		Installed: installedVersions,
+		LTS:        lts,
+		Current:    current,
+		Installed:  installedVersions,
+		SystemNode: sysNode,
 	}
 
 	data, err := json.MarshalIndent(out, "", "  ")
@@ -100,7 +129,7 @@ func outputCheckJSON(cmd *cobra.Command, lts, current *node.ManifestVersion, ins
 	return nil
 }
 
-func outputCheckTable(cmd *cobra.Command, lts, current *node.ManifestVersion, installed detector.Registry) error {
+func outputCheckTable(cmd *cobra.Command, lts, current *node.ManifestVersion, installed detector.Registry, sysNode *systemNodeJSON) error {
 	cmd.Println()
 	cmd.Printf("  LTS:     %s (released %s)\n", lts.Version, lts.Date)
 	cmd.Printf("  Current: %s (released %s)\n", current.Version, current.Date)
@@ -108,20 +137,77 @@ func outputCheckTable(cmd *cobra.Command, lts, current *node.ManifestVersion, in
 
 	if len(installed.Found) == 0 {
 		cmd.Println("No Node.js version manager detected.")
-		return nil
+	} else {
+		cmd.Println("Installed versions:")
+		for _, m := range installed.Found {
+			versions, err := m.ListInstalled()
+			if err != nil {
+				cmd.Printf("  - %s: [error listing versions]\n", m.Name())
+				continue
+			}
+			cmd.Printf("  - %s: %s\n", m.Name(), formatVersions(versions))
+		}
 	}
 
-	cmd.Println("Installed versions:")
-	for _, m := range installed.Found {
-		versions, err := m.ListInstalled()
-		if err != nil {
-			cmd.Printf("  - %s: [error listing versions]\n", m.Name())
-			continue
+	// Surface the on-PATH `node` classification. When sysNode is nil
+	// the probe didn't run (or `which node` failed) — we say so
+	// explicitly rather than staying silent, so the user has a
+	// single source of truth for what nodeup sees.
+	cmd.Println()
+	if sysNode == nil {
+		cmd.Println("System node:  (could not probe `node` on PATH)")
+		return nil
+	}
+	switch sysNode.Kind {
+	case "manager":
+		cmd.Printf("System node:  %s (managed by %s)\n", sysNode.Path, sysNode.Manager)
+	case "unknown":
+		// Path matched no known layout. Don't print a long warning
+		// here — `nodeup upgrade` is where the warning belongs.
+		cmd.Printf("System node:  %s (unrecognized layout)\n", sysNode.Path)
+	default:
+		// OS-package / snap / flatpak / homebrew-core. Render the
+		// same warning text that `nodeup upgrade` would print, so
+		// `check` is a useful diagnostic on its own. We capture
+		// into a buffer rather than hitting stderr directly to keep
+		// the table layout coherent.
+		var buf strings.Builder
+		_, _ = detector.WarnSystemNode(&buf, detector.SystemNodeInfo{
+			Path:    sysNode.Path,
+			Kind:    parseSystemNodeKind(sysNode.Kind),
+			Manager: sysNode.Manager,
+		})
+		// Indent each rendered line by two spaces so it lines up
+		// with the rest of the table block.
+		for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
+			cmd.Printf("  %s\n", line)
 		}
-		cmd.Printf("  - %s: %s\n", m.Name(), formatVersions(versions))
 	}
 
 	return nil
+}
+
+// parseSystemNodeKind round-trips a kind label produced by
+// SystemNodeKind.String() back to the enum, so outputCheckTable can
+// re-render the warning text without re-classifying the path. The
+// mapping is intentionally exhaustive: any unknown label resolves
+// to SystemNodeUnknown so the caller falls into the soft-warning
+// branch.
+func parseSystemNodeKind(s string) detector.SystemNodeKind {
+	switch s {
+	case "os-package":
+		return detector.SystemNodeOSPackage
+	case "snap":
+		return detector.SystemNodeSnap
+	case "flatpak":
+		return detector.SystemNodeFlatpak
+	case "homebrew-core":
+		return detector.SystemNodeHomebrewCore
+	case "manager":
+		return detector.SystemNodeManaged
+	default:
+		return detector.SystemNodeUnknown
+	}
 }
 
 func formatVersions(versions []semver.Version) string {

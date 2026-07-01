@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/spf13/cobra"
@@ -80,6 +83,17 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("resolve manager: %w", err)
 	}
 	cmd.Printf("Using manager: %s\n", m.Name())
+
+	// Probe the system Node BEFORE we start touching anything. If it
+	// turns out `node` on PATH is owned by the OS package manager, snap,
+	// flatpak, or homebrew-core (i.e., NOT inside the manager's data
+	// directory), surface a warning so the user understands nodeup will
+	// leave that binary alone and what tool to use instead.
+	//
+	// We print to stderr, not stdout, so machine-readable consumers
+	// (e.g., `nodeup upgrade | jq`) don't get the prose mixed into their
+	// JSON / table output.
+	warnSystemNodeIfNeeded(cmd.Context(), m, os.Stderr)
 
 	// Fetch versions
 	var manifest node.Manifest
@@ -236,4 +250,24 @@ func parseVersion(s string) (*semver.Version, error) {
 		s = s[1:]
 	}
 	return semver.NewVersion(s)
+}
+
+// warnSystemNodeIfNeeded is the upgrade-command hook for the
+// system-node classifier. It calls ResolveSystemNode with the
+// resolved manager, then prints the warning to w (typically
+// os.Stderr) when the classifier flags the path as non-managed.
+//
+// Failure to locate `node` at all is treated as "nothing to warn
+// about" — that's a separate concern handled by other code paths.
+// Errors during the `which node` probe are silently swallowed
+// because the worst case is "we don't print the warning" which is
+// strictly better than aborting the upgrade over a path-resolution
+// glitch.
+func warnSystemNodeIfNeeded(ctx context.Context, m detector.Manager, w io.Writer) {
+	info, err := detector.ResolveSystemNode(ctx, m)
+	if err != nil {
+		// No node on PATH, or `which` itself failed. Not a warning.
+		return
+	}
+	detector.WarnSystemNode(w, info)
 }

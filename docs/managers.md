@@ -42,4 +42,39 @@ Or via flag:
 nodeup upgrade --manager fnm
 ```
 
+## When `node` on PATH doesn't belong to a manager
+
+nodeup's job is to swap Node versions inside a *version manager* it
+manages — `fnm`, `nvm`, `Volta`, `asdf`, `mise`, `n`, `nodenv`, or
+`nvm-windows`. If the `node` binary that lives first on your PATH
+was installed some other way, nodeup can't safely replace it: the
+other installer would just put it back on the next update.
+
+Both `nodeup upgrade` and `nodeup check` classify the `node` on PATH
+into one of these buckets:
+
+| Kind             | Example paths                                                        | nodeup's behavior |
+|------------------|----------------------------------------------------------------------|-------------------|
+| `manager`        | `~/.fnm/node-versions/v22/bin/node`, `~/.nvm/versions/node/...`      | Manages normally — no warning. |
+| `os-package`     | `/usr/bin/node`, `/bin/node`, `/opt/node/...`, `C:\Program Files\nodejs\node.exe`, `~/scoop/apps/nodejs/...` | Prints a warning to stderr (upgrade) or table (check). The platform-specific hint names the right upgrade tool: `sudo apt upgrade nodejs`, `winget upgrade Node.js`, etc. |
+| `snap`           | `/snap/bin/node`, `/snap/node/<rev>/bin/node`                        | Warns. Run `snap refresh node`. |
+| `flatpak`        | `/var/lib/flatpak/runtime/node/...`, `/usr/libexec/flatpak/...`       | Warns. Run `flatpak update` (or uninstall the flatpak and let nodeup manage a manager install instead). |
+| `homebrew-core`  | `/usr/local/bin/node`, `/opt/homebrew/bin/node`, `~/homebrew/Cellar/node/...`, `/home/linuxbrew/.linuxbrew/bin/node` | Warns. Run `brew upgrade node`, or `brew uninstall node` and let nodeup take over. |
+| `unknown`        | Anything that doesn't match the patterns above                       | Soft warning: "nodeup does not recognize this layout." |
+
+The classifier is path-based and runs in two passes: first it asks
+"is this inside a manager's data dir?" (so `NVM_DIR=/usr/local/nvm`
+beats `/usr/local`'s OS-shape); if not, the binary's install path is
+classified by structural cues (`/snap/bin/`, `/usr/bin/`, the
+Homebrew wrapper under `/usr/local/bin/node`, etc.).
+
+If you want nodeup to take over a node that's currently a system
+install, **uninstall the system copy first** (e.g., `brew uninstall
+node`, `sudo apt remove nodejs`, `snap remove node`), then make sure
+the manager's shim directory comes earlier on PATH than the system
+bin dir (e.g., `fnm env --use-on-cd | source`, or add
+`$HOME/.fnm/current/bin` to your shell init). Once `which node`
+points at a binary inside the manager's data dir, nodeup's next
+run will classify it as `manager` and proceed without warning.
+
 > _Status: Phase 1 ✅ done — all 8 managers detected · last updated 2026-06-29_
