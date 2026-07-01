@@ -126,8 +126,9 @@ var whichNode = func(ctx context.Context) (string, error) {
 // lives on disk, and returns the result. Returns ErrNoNodeOnPATH when
 // no `node` binary exists.
 //
-// On macOS, Linux: invokes `which node` and reads the first line.
-// On Windows: invokes `where node` and reads the first line.
+// `node` is located via exec.LookPath (which walks PATH itself, so
+// it doesn't depend on the `which`/`where` shell-outs being
+// installed) and returns an absolute path.
 //
 // The classification is path-based and intentional: we never
 // try to "use the manager's API" to identify it, because by
@@ -298,9 +299,12 @@ func looksLikeHomebrewCoreLayout(s string) bool {
 // discriminator — but the function is here so a future improvement
 // can hook this signal without churning callers.
 //
-// The actual detection: if the path contains "/.nvm/versions/node/"
-// anywhere, it's an nvm install regardless of where NVM_DIR points.
-// Same for fnm, volta, asdf, mise, n, nodenv.
+// The actual detection: if the path contains "/.nvm/" or
+// "/nvm/versions/" anywhere along it, it's an nvm install
+// regardless of where NVM_DIR points. Note this helper is
+// deliberately nvm-only: fnm/volta/asdf/mise/n/nodenv are
+// detected upstream via the manager-override path in
+// ResolveSystemNode, not by name patterns here.
 func looksLikeNVMInstall(cleanPath string) bool {
 	return strings.Contains(cleanPath, string(filepath.Separator)+".nvm"+string(filepath.Separator)) ||
 		strings.Contains(cleanPath, string(filepath.Separator)+"nvm"+string(filepath.Separator)+"versions")
@@ -309,14 +313,17 @@ func looksLikeNVMInstall(cleanPath string) bool {
 // isInside reports whether child (an absolute path) is the same as
 // or a descendant of parent (also absolute). It uses filepath.Rel
 // so leading ".." segments produced by a non-absolute parent
-// surface as "not inside". Both arguments must be cleaned first
-// (filepath.Rel would otherwise be confused by trailing slash).
+// surface as "not inside". Both arguments are cleaned first —
+// filepath.Rel is confused by trailing slashes and intermediate
+// "."/".." segments (e.g., /a/b/c/..) which would otherwise
+// produce false negatives for semantically-inside paths.
 func isInside(child, parent string) bool {
 	if child == "" || parent == "" {
 		return false
 	}
+	cleanChild := filepath.Clean(child)
 	cleanParent := filepath.Clean(parent)
-	rel, err := filepath.Rel(cleanParent, child)
+	rel, err := filepath.Rel(cleanParent, cleanChild)
 	if err != nil {
 		return false
 	}
@@ -357,8 +364,9 @@ func isUnder(s, prefix string) bool {
 //
 // We keep this conservative: an empty slice with ok=true means
 // "this manager exists, but we don't know its root — fall through
-// to path-based classification". An ok=false result is reserved
-// for "manager is nil, please don't try to attribute".
+// to path-based classification". ok=false means "we have nothing
+// to say about this manager" — either the manager is nil, or its
+// name isn't one we recognize (unknown/unsupported manager).
 func managerManagedRoots(m Manager) (roots []string, ok bool) {
 	if m == nil {
 		return nil, false
@@ -455,12 +463,14 @@ func managerManagedRoots(m Manager) (roots []string, ok bool) {
 //
 //   - info.Kind == SystemNodeManaged: this is exactly what nodeup
 //     upgrades; no warning needed.
-//   - info.Kind == SystemNodeUnknown and info.Path == "": nothing
-//     detected; that's a different problem (no node at all) and is
-//     handled elsewhere (ErrNoNodeOnPATH).
-//   - info.Kind == SystemNodeUnknown and info.Path != "": path
-//     didn't match any known layout; we emit a soft warning so the
-//     user can decide.
+//   - info.Path == "" (regardless of Kind): nothing was detected on
+//     PATH; that's a separate problem (no node at all) handled
+//     elsewhere (ErrNoNodeOnPATH).
+//
+// Otherwise (any non-managed Kind with a non-empty Path, including
+// SystemNodeUnknown), a warning IS emitted — a soft one in the
+// SystemNodeUnknown case so the user can decide whether their
+// unrecognized layout is safe to overwrite.
 //
 // The text is plain prose by design: integration tests assert on
 // substrings, and `nodeup upgrade` and `nodeup check` both render

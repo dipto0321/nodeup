@@ -59,7 +59,7 @@ into one of these buckets:
 | `os-package`     | `/usr/bin/node`, `/bin/node`, `/opt/node/...`, `C:\Program Files\nodejs\node.exe`, `~/scoop/apps/nodejs/...` | Prints a warning to stderr (upgrade) or table (check). The platform-specific hint names the right upgrade tool: `sudo apt upgrade nodejs`, `winget upgrade Node.js`, etc. |
 | `snap`           | `/snap/bin/node`, `/snap/node/<rev>/bin/node`                        | Warns. Run `snap refresh node`. |
 | `flatpak`        | `/var/lib/flatpak/runtime/node/...`, `/usr/libexec/flatpak/...`       | Warns. Run `flatpak update` (or uninstall the flatpak and let nodeup manage a manager install instead). |
-| `homebrew-core`  | `/usr/local/bin/node`, `/opt/homebrew/bin/node`, `~/homebrew/Cellar/node/...`, `/home/linuxbrew/.linuxbrew/bin/node` | Warns. Run `brew upgrade node`, or `brew uninstall node` and let nodeup take over. |
+| `homebrew-core`  | `/usr/local/bin/node`, `/opt/homebrew/bin/node`, `/usr/local/Cellar/node/...`, `/opt/homebrew/Cellar/node/...`, `/home/linuxbrew/.linuxbrew/bin/node` | Warns. Run `brew upgrade node`, or `brew uninstall node` and let nodeup take over. |
 | `unknown`        | Anything that doesn't match the patterns above                       | Soft warning: "nodeup does not recognize this layout." |
 
 The classifier is path-based and runs in two passes: first it asks

@@ -55,9 +55,12 @@ func TestClassifySystemNodePath(t *testing.T) {
 		{name: "flatpak lib", path: "/usr/lib/flatpak/abc/bin/node", want: SystemNodeFlatpak},
 
 		// Homebrew core — Intel (/usr/local), Apple Silicon (/opt/homebrew),
-		// Linuxbrew, and the Cellar layout under each.
+		// Linuxbrew, and the Cellar layout under each. The Intel-mac
+		// /usr/local/bin/node wrapper only classifies as Homebrew on
+		// darwin; on Linux that path is overwhelmingly a manual
+		// `make install` (Homebrew on Linux lives under
+		// /home/linuxbrew/.linuxbrew, handled separately).
 		{name: "homebrew intel cellar", path: "/usr/local/Cellar/node/22.0.0/bin/node", want: SystemNodeHomebrewCore},
-		{name: "homebrew intel wrapper", path: "/usr/local/bin/node", want: SystemNodeHomebrewCore},
 		{name: "homebrew apple silicon cellar", path: "/opt/homebrew/Cellar/node/22.0.0/bin/node", want: SystemNodeHomebrewCore},
 		{name: "homebrew apple silicon wrapper", path: "/opt/homebrew/bin/node", want: SystemNodeHomebrewCore},
 		{name: "homebrew opt", path: "/opt/homebrew/opt/node/bin/node", want: SystemNodeHomebrewCore},
@@ -69,7 +72,6 @@ func TestClassifySystemNodePath(t *testing.T) {
 		{name: "suse usr sbin", path: "/usr/sbin/node", want: SystemNodeOSPackage},
 		{name: "legacy sbin", path: "/sbin/node", want: SystemNodeOSPackage},
 		{name: "vendor opt", path: "/opt/node/bin/node", want: SystemNodeOSPackage},
-		{name: "manual usr local bin", path: "/usr/local/bin/node", want: SystemNodeHomebrewCore}, // Homebrew wrapper wins on macOS/Linux
 		{name: "macports", path: "/opt/local/bin/node", want: SystemNodeOSPackage},
 
 		// Windows — official MSI and Scoop.
@@ -81,6 +83,30 @@ func TestClassifySystemNodePath(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			if got := classifySystemNodePath(c.path); got != c.want {
 				t.Errorf("classifySystemNodePath(%q) = %s, want %s", c.path, got, c.want)
+			}
+		})
+	}
+}
+
+func TestClassifySystemNodePath_PlatformSpecific(t *testing.T) {
+	// `/usr/local/bin/node` is the Homebrew wrapper on macOS but a
+	// manual `make install` on Linux. The classifier branches on
+	// runtime.GOOS, so the expected result depends on the host.
+	cases := []struct {
+		goos string
+		want SystemNodeKind
+	}{
+		{"darwin", SystemNodeHomebrewCore},
+		{"linux", SystemNodeOSPackage},
+	}
+	for _, c := range cases {
+		t.Run(c.goos, func(t *testing.T) {
+			if runtime.GOOS != c.goos {
+				t.Skipf("skipping: host is %s, not %s", runtime.GOOS, c.goos)
+			}
+			if got := classifySystemNodePath("/usr/local/bin/node"); got != c.want {
+				t.Errorf("classifySystemNodePath(%q) on %s = %s, want %s",
+					"/usr/local/bin/node", runtime.GOOS, got, c.want)
 			}
 		})
 	}
@@ -116,6 +142,8 @@ func TestIsInside(t *testing.T) {
 		{"", "/a", false},          // empty child
 		{"/a", "", false},          // empty parent
 		{"/a/../b", "/a", false},   // ".." segments
+		{"/a/b/c/..", "/a", true},  // child cleaned: /a/b → still inside /a
+		{"/a/b/./c", "/a/b", true}, // child cleaned: "." segment collapses
 	}
 	for _, c := range cases {
 		if got := isInside(c.child, c.parent); got != c.want {
@@ -603,21 +631,21 @@ func captureWriter(fn func(io.Writer)) string {
 // compiles and reads first-line output correctly when invoked
 // against a fake script.
 
-func TestWhichNode_DefaultsToWhichOrWhere(t *testing.T) {
-	// Save and restore env to ensure `which` is on PATH for unix
-	// (this test only runs the seam against a fake path; if `which`
-	// is missing we skip rather than fail).
+func TestWhichNode_DefaultsToLookPath(t *testing.T) {
+	// Sanity-check the production whichNode seam (which uses
+	// exec.LookPath under the hood): look up `node` on PATH and
+	// assert it returns a non-empty absolute path. We skip rather
+	// than fail when `node` is absent — minimal CI images and the
+	// `go test` host may not have node installed.
 	if runtime.GOOS == "windows" {
-		t.Skip("unix-only sanity check; windows `where` variant is exercised in CI")
+		t.Skip("path semantics differ on windows; the resolution path is exercised in CI")
 	}
-	// Look up `go` (always present in any Go test environment) and
-	// assert that whichNode returns a non-empty absolute path.
 	p, err := whichNode(context.Background())
 	if err != nil {
-		t.Skipf("whichNode failed (no which on PATH?): %v", err)
+		t.Skipf("whichNode failed (no `node` on PATH?): %v", err)
 	}
 	if p == "" {
-		t.Skip("whichNode returned empty (no executable on PATH)")
+		t.Skip("whichNode returned empty (no `node` on PATH)")
 	}
 	if !filepath.IsAbs(p) {
 		t.Errorf("whichNode path is not absolute: %q", p)

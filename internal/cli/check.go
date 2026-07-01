@@ -74,13 +74,23 @@ func runCheck(cmd *cobra.Command, args []string) error {
 	// Get installed versions if a manager is available
 	installed := detector.DetectAll()
 
-	// Probe `node` on PATH and classify how it's installed. We pass
-	// nil for the manager here — `check` doesn't pick a manager
-	// (that's `upgrade`'s job) and the classifier still works from
-	// path patterns alone. The warning text is captured for both
-	// the JSON envelope and the table renderer.
+	// Probe `node` on PATH and classify how it's installed. When
+	// exactly one manager was detected we pass it to the classifier
+	// so a manager-owned binary on PATH classifies as `manager`
+	// rather than the path-only fallback (which would otherwise
+	// surface an "unrecognized layout" for any node living under
+	// ~/.fnm/ or similar — a perfectly normal manager install).
+	// With zero or multiple managers we pass nil: nothing to
+	// attribute, the path classifier handles it.
+	var sysMgr detector.Manager
+	if len(installed.Found) == 1 {
+		sysMgr = installed.Found[0]
+	}
+
+	// The warning text is captured for both the JSON envelope and
+	// the table renderer.
 	var sysNode *systemNodeJSON
-	if info, err := detector.ResolveSystemNode(cmd.Context(), nil); err == nil {
+	if info, err := detector.ResolveSystemNode(cmd.Context(), sysMgr); err == nil {
 		sysNode = &systemNodeJSON{
 			Path:    info.Path,
 			Kind:    info.Kind.String(),
