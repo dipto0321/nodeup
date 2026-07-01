@@ -270,7 +270,6 @@ func TestCleanupPrompt_SpecificVersionInvalidSkips(t *testing.T) {
 
 func TestCleanupPrompt_AutoDeleteAll(t *testing.T) {
 	// --cleanup: no all-or-nothing prompt; straight to deletion.
-	streams, _ := newCleanupIO("")
 	mgr := &stubManager{name: "fnm"}
 	cfg := cleanupConfig{AutoDeleteAll: true, PerVersion: true}
 
@@ -284,7 +283,7 @@ func TestCleanupPrompt_AutoDeleteAll(t *testing.T) {
 	var inBuf bytes.Buffer
 	inBuf.WriteString("y\n")
 	inBuf.WriteString("y\n")
-	streams = cleanupIO{
+	streams := cleanupIO{
 		in:  bufio.NewReader(&inBuf),
 		out: &bytes.Buffer{},
 	}
@@ -339,7 +338,6 @@ func TestCleanupPrompt_NoCandidatesNoPrompt(t *testing.T) {
 func TestCleanupPrompt_PrefilteredOnly(t *testing.T) {
 	// --cleanup-version 20.18.0: only that version should be offered,
 	// and the all-or-nothing prompt should be skipped.
-	streams, _ := newCleanupIO("")
 	mgr := &stubManager{name: "fnm"}
 	cfg := cleanupConfig{
 		PerVersion:  true, // per-version prompt still happens
@@ -354,7 +352,7 @@ func TestCleanupPrompt_PrefilteredOnly(t *testing.T) {
 	// Per-version "y" for the one prefiltered version.
 	var inBuf bytes.Buffer
 	inBuf.WriteString("y\n")
-	streams = cleanupIO{
+	streams := cleanupIO{
 		in:  bufio.NewReader(&inBuf),
 		out: &bytes.Buffer{},
 	}

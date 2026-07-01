@@ -100,7 +100,7 @@ type cleanupFailure struct {
 //
 // Errors from individual Uninstall() calls are collected but do NOT
 // stop the loop — one failed delete doesn't block the next attempt.
-func runCleanupPrompt(cfg cleanupConfig, toInstall []semver.Version, installed []semver.Version, active semver.Version, m detector.Manager, streams cleanupIO) (cleanupResult, error) {
+func runCleanupPrompt(cfg cleanupConfig, toInstall, installed []semver.Version, active semver.Version, m detector.Manager, streams cleanupIO) (cleanupResult, error) {
 	var result cleanupResult
 
 	// Step 1: Non-interactive skip.
@@ -200,7 +200,7 @@ func runCleanupPrompt(cfg cleanupConfig, toInstall []semver.Version, installed [
 //
 // Empty inputs are tolerated: if none of toInstall / active are
 // non-empty, only the empty-set exclusion applies.
-func cleanupCandidates(toInstall []semver.Version, installed []semver.Version, active semver.Version) []semver.Version {
+func cleanupCandidates(toInstall, installed []semver.Version, active semver.Version) []semver.Version {
 	exclude := make(map[string]struct{}, len(toInstall)+1)
 	for _, v := range toInstall {
 		exclude[v.String()] = struct{}{}
@@ -227,7 +227,7 @@ func cleanupCandidates(toInstall []semver.Version, installed []semver.Version, a
 // `--cleanup-version 22 20` keeps that order rather than alphabetical).
 // We filter by string equality (semver.Compare should agree, but the
 // string is what we'd print).
-func intersectCandidates(candidates []semver.Version, want []semver.Version) []semver.Version {
+func intersectCandidates(candidates, want []semver.Version) []semver.Version {
 	set := make(map[string]struct{}, len(candidates))
 	for _, c := range candidates {
 		set[c.String()] = struct{}{}
@@ -346,7 +346,7 @@ func readPromptLine(streams cleanupIO) (string, error) {
 }
 
 func trimNewline(s string) string {
-	for len(s) > 0 && (s[len(s)-1] == '\n' || s[len(s)-1] == '\r') {
+	for s != "" && (s[len(s)-1] == '\n' || s[len(s)-1] == '\r') {
 		s = s[:len(s)-1]
 	}
 	return s
