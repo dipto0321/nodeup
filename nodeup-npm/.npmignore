@@ -1,0 +1,42 @@
+# Node-up wrapper published artefacts — what `npm publish` ships:
+#   scripts/install.js   — postinstall downloader
+#   scripts/check.js     — preinstall platform check
+#   README.md            — install / usage notes
+#   LICENSE              — MIT
+#
+# Everything else in nodeup-npm/ is local dev scaffolding and is excluded
+# from the published tarball.
+
+# Local artefacts — populated at install time by scripts/install.js
+# (the postinstall downloads the right binary from the GitHub release
+# into ./bin/). Anything already in bin/ before publish would be wrong
+# for every user except the one who built it.
+/bin/
+
+# Wrapper dev / CI scratch
+/.github/
+/scripts/__tests__/
+*.test.js
+.coverage
+.nyc_output
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Node / npm noise (we're shipped, not installed)
+node_modules/
+package-lock.json
+yarn.lock
+.npm/
+.npmrc
+*.log
+
+# VCS
+.git/
+.gitignore
+.gitattributes

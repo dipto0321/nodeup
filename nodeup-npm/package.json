@@ -1,0 +1,43 @@
+{
+  "name": "nodeup",
+  "version": "1.0.0",
+  "description": "Automated Node.js version upgrade + global package migration CLI. Static Go binary wrapped for npm distribution.",
+  "license": "MIT",
+  "author": "Dipto Karmakar <dipto@local>",
+  "homepage": "https://github.com/dipto0321/nodeup",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dipto0321/nodeup.git",
+    "directory": "nodeup-npm"
+  },
+  "bugs": {
+    "url": "https://github.com/dipto0321/nodeup/issues"
+  },
+  "keywords": [
+    "node",
+    "nodejs",
+    "version-manager",
+    "fnm",
+    "nvm",
+    "volta",
+    "upgrade",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=14"
+  },
+  "bin": {
+    "nodeup": "bin/nodeup"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install.js",
+    "preinstall": "node scripts/check.js"
+  },
+  "files": [
+    "scripts/install.js",
+    "scripts/check.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "binaryVersion": "1.0.0"
+}
