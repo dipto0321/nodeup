@@ -645,6 +645,18 @@ func TestNVMWindows_MutationMethods_NotImplemented(t *testing.T) {
 	}
 }
 
+func TestNVMWindows_CurrentReturnsSentinel(t *testing.T) {
+	// Current() on nvm-windows is unimplemented (the upstream
+	// `nvm current` subcommand is unreliable on newer builds). The
+	// cleanup prompt treats the error as "active version unknown"
+	// and proceeds without exclusion — so returning the sentinel
+	// here is the right behavior.
+	_, err := NewNVMWindows().Current()
+	if !errors.Is(err, ErrNVMWindowsNotImplemented) {
+		t.Errorf("Current() err = %v, want ErrNVMWindowsNotImplemented", err)
+	}
+}
+
 // --- nvmWindowsRoot / nvmWindowsSymlink helpers -------------------------
 
 func TestNVMWindows_NvmWindowsRootHelper_PrefersEnv(t *testing.T) {

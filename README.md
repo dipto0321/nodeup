@@ -171,6 +171,15 @@ nodeup upgrade --dry-run
 nodeup upgrade --yes
 ```
 
+After a successful upgrade, `nodeup upgrade` prompts you about removing old
+Node.js versions — answering **y** deletes all of them, typing a specific
+version (e.g. `20.18.0`) deletes only that one, and **N** (or empty enter)
+keeps everything. The candidates exclude the new LTS / Current we just
+installed plus the version that's currently active on your shell. Skip
+the prompt entirely with `--no-cleanup` or pre-decide with `--cleanup`.
+See [docs/managers.md](docs/managers.md#post-upgrade-cleanup) for the
+full set of cleanup flags and per-manager behavior.
+
 If you have multiple managers installed, `nodeup` will prompt you to pick one
 the first time and remember it in `~/.nodeup/config.yaml`.
 
@@ -234,7 +243,7 @@ This is the **v1.0.0 development line**. See `CHANGELOG.md` for what's done.
 
 | Version | Status | Notes |
 |---|---|---|
-| v1.0.0 | 🛠 in development | Phase 1 ✅ — 8/8 managers detected. Phase 2 ✅ — `nodeup check` with nodejs.org/dist/index.json fetch + TTL cache. Phase 3 ✅ — package snapshot/restore + migration report. Phase 4 ✅ — end-to-end `nodeup upgrade`. Phase 5 ✅ — YAML config file + `config` subcommands (show / get / set / init). Phase 6 ✅ — cross-platform polish: `QuotePath` for paths with spaces, interrupted-upgrade sentinel + replay, system-node classifier with warnings. Phase 7 (GoReleaser config + brew/scoop taps + npm wrapper) is the remaining work — see issues #17 and #18. |
+| v1.0.0 | 🛠 in development | Phase 1 ✅ — 8/8 managers detected. Phase 2 ✅ — `nodeup check` with nodejs.org/dist/index.json fetch + TTL cache. Phase 3 ✅ — package snapshot/restore + migration report. Phase 4 ✅ — end-to-end `nodeup upgrade`. Phase 5 ✅ — YAML config file + `config` subcommands (show / get / set / init). Phase 6 ✅ — cross-platform polish: `QuotePath` for paths with spaces, interrupted-upgrade sentinel + replay, system-node classifier with warnings. Phase 7 ✅ — post-upgrade cleanup prompt (`--cleanup` / `--cleanup-version` / `--no-cleanup` / `cleanup.auto` / `cleanup.prompt`) plus native mutation commands for all 7 supported managers. Distribution (GoReleaser + brew/scoop taps + npm wrapper) is also Phase 7 — see issues #17 and #18. |
 
 Phase 1 is the **detection surface** — every manager is recognized and the
 version + installed-list reads return real data (PRs #1–#8). Subsequent

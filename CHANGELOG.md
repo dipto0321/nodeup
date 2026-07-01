@@ -8,6 +8,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- Post-upgrade cleanup prompt (`nodeup upgrade`): after a successful
+  upgrade, nodeup asks whether to delete the old Node.js versions
+  left behind. The prompt offers three options — `y` deletes every
+  candidate, typing a specific version (e.g. `20.18.0`) deletes only
+  that one, and `N` (or empty enter) skips. Candidates are computed
+  as `installed \ {new LTS, new Current, currently active}`, where
+  the active version is detected via `<manager> current` (or per-
+  manager equivalent). The new `Manager.Current()` interface method
+  backs the exclusion — nvm-windows returns the
+  `ErrNVMWindowsNotImplemented` sentinel and the exclusion is
+  skipped. New flags: `--cleanup` (auto-confirm), `--cleanup-version
+  <v>` (repeatable, picks specific versions), plus the existing
+  `--no-cleanup` to skip the prompt entirely. Config equivalents
+  (`cleanup.auto`, `cleanup.prompt`) ship under the same names; see
+  `docs/managers.md#post-upgrade-cleanup` for the full precedence
+  table. Closes #41.
+- Native mutation commands for all 7 working managers (fnm, nvm,
+  Volta, asdf, mise, n, nodenv): `Install`, `Uninstall`, `Use`,
+  `SetDefault`, and `GlobalNpmPrefix` are now real shell-outs rather
+  than stubs returning `ErrXxxNotImplemented`. Volta's `SetDefault`
+  and n's `SetDefault` are intentional no-ops (those managers pin
+  per-project, not per-machine). `GlobalNpmPrefix` returns the
+  per-version npm global modules directory for each manager's on-
+  disk layout, which the migration step needs to enumerate packages.
+  nvm-windows remains unsupported (no install/uninstall CLI on that
+  platform); its stubs still return
+  `ErrNVMWindowsNotImplemented` so callers can detect and skip.
+  Per-manager cleanup behavior is documented in
+  `docs/managers.md#post-upgrade-cleanup`. Closes #40.
+
+### Added (continued)
 - YAML config file support (`internal/config`): the documented schema
   from `docs/configuration.md` is now first-class. Settings live in
   `~/.nodeup/config.yaml` (override with `$NODEUP_CONFIG` or redirect

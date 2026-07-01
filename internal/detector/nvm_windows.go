@@ -307,6 +307,13 @@ func parseNVMWindowsInstalled(stdout string) ([]semver.Version, error) {
 // upgrade command (Phase 4) needs to mutate state. Returning an
 // explicit sentinel error (rather than nil) makes "not implemented"
 // provably distinguishable from "succeeded".
+//
+// Current() also returns ErrNVMWindowsNotImplemented — nvm-windows
+// has a `nvm current` subcommand but it's notoriously flaky on
+// newer builds (returns "" or "Unknown" with non-zero exit). The
+// cleanup prompt treats Current() errors as "active version
+// unknown" and proceeds without exclusion, so the sentinel is
+// fine here.
 
 func (n *NVMWindows) Install(ver semver.Version) error    { return ErrNVMWindowsNotImplemented }
 func (n *NVMWindows) Uninstall(ver semver.Version) error  { return ErrNVMWindowsNotImplemented }
@@ -314,4 +321,12 @@ func (n *NVMWindows) Use(ver semver.Version) error        { return ErrNVMWindows
 func (n *NVMWindows) SetDefault(ver semver.Version) error { return ErrNVMWindowsNotImplemented }
 func (n *NVMWindows) GlobalNpmPrefix(ver semver.Version) (string, error) {
 	return "", ErrNVMWindowsNotImplemented
+}
+
+// Current is not implemented for nvm-windows. Returning the
+// sentinel error lets the upgrade prompt treat the active version
+// as unknown and proceed without excluding it from the cleanup
+// candidates.
+func (n *NVMWindows) Current() (semver.Version, error) {
+	return semver.Version{}, ErrNVMWindowsNotImplemented
 }

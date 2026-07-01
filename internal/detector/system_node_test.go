@@ -608,6 +608,7 @@ func (f fakeManager) Uninstall(semver.Version) error                 { return ni
 func (f fakeManager) Use(semver.Version) error                       { return nil }
 func (f fakeManager) SetDefault(semver.Version) error                { return nil }
 func (f fakeManager) GlobalNpmPrefix(semver.Version) (string, error) { return "", nil }
+func (f fakeManager) Current() (semver.Version, error)               { return semver.Version{}, nil }
 
 func equalStringSlices(a, b []string) bool {
 	if len(a) != len(b) {

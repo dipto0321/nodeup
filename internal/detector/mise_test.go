@@ -520,31 +520,123 @@ func TestMise_Detect_FindsBinaryOnPath(t *testing.T) {
 	}
 }
 
-// --- Mutation stubs -----------------------------------------------------
+// --- Mutation methods -------------------------------------------------
 
-func TestMise_MutationMethods_NotImplemented(t *testing.T) {
-	// Phase 1: Install / Uninstall / Use / SetDefault /
-	// GlobalNpmPrefix return ErrMiseNotImplemented. This sentinel
-	// lets callers distinguish "not implemented" from other
-	// errors via errors.Is.
+func TestMise_MutationMethodsInvokeShell(t *testing.T) {
+	// Mise mutation commands all take `node@<v>` (tool prefix +
+	// version). We verify each call wraps the version with the tool
+	// prefix so the CLI doesn't accidentally call `mise install 22.5.0`.
 	m := NewMise()
-	ver, _ := semver.NewVersion("20.0.0")
+	ver, err := semver.NewVersion("22.5.0")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if err := m.Install(*ver); !errors.Is(err, ErrMiseNotImplemented) {
-		t.Errorf("Install() = %v, want ErrMiseNotImplemented", err)
+	type tc struct {
+		name    string
+		call    func() error
+		wantArg string
 	}
-	if err := m.Uninstall(*ver); !errors.Is(err, ErrMiseNotImplemented) {
-		t.Errorf("Uninstall() = %v, want ErrMiseNotImplemented", err)
+	cases := []tc{
+		{"Install", func() error { return m.Install(*ver) }, "install node@22.5.0"},
+		{"Uninstall", func() error { return m.Uninstall(*ver) }, "uninstall node@22.5.0"},
+		{"Use", func() error { return m.Use(*ver) }, "use node@22.5.0"},
+		{"SetDefault", func() error { return m.SetDefault(*ver) }, "use --global node@22.5.0"},
 	}
-	if err := m.Use(*ver); !errors.Is(err, ErrMiseNotImplemented) {
-		t.Errorf("Use() = %v, want ErrMiseNotImplemented", err)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var captured string
+			withStubShell(t,
+				nil,
+				func(req string) (*platform.RunResult, error) {
+					captured = req
+					return &platform.RunResult{}, nil
+				},
+			)
+			if err := c.call(); err != nil {
+				t.Fatalf("%s: unexpected error: %v", c.name, err)
+			}
+			want := "mise " + c.wantArg
+			if captured != want {
+				t.Errorf("%s invoked %q, want %q", c.name, captured, want)
+			}
+		})
 	}
-	if err := m.SetDefault(*ver); !errors.Is(err, ErrMiseNotImplemented) {
-		t.Errorf("SetDefault() = %v, want ErrMiseNotImplemented", err)
+}
+
+func TestMise_Uninstall_PropagatesError(t *testing.T) {
+	wantErr := errors.New("simulated mise failure")
+	withStubShell(t, nil, func(req string) (*platform.RunResult, error) {
+		return nil, wantErr
+	})
+
+	v := semver.MustParse("20.0.0")
+	err := NewMise().Uninstall(*v)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
-	if p, err := m.GlobalNpmPrefix(*ver); !errors.Is(err, ErrMiseNotImplemented) {
-		t.Errorf("GlobalNpmPrefix() err = %v, want ErrMiseNotImplemented", err)
-	} else if p != "" {
-		t.Errorf("GlobalNpmPrefix() prefix = %q, want \"\"", p)
+	if !errors.Is(err, wantErr) {
+		t.Errorf("error %v should wrap %v", err, wantErr)
+	}
+}
+
+// --- parseMiseCurrent --------------------------------------------------
+
+func TestParseMiseCurrent_Bare(t *testing.T) {
+	v, err := parseMiseCurrent("22.11.0\n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v.String() != "22.11.0" {
+		t.Errorf("got %q, want %q", v.String(), "22.11.0")
+	}
+}
+
+func TestParseMiseCurrent_WithPrefix(t *testing.T) {
+	v, err := parseMiseCurrent("v22.11.0\n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v.String() != "22.11.0" {
+		t.Errorf("got %q, want %q", v.String(), "22.11.0")
+	}
+}
+
+func TestParseMiseCurrent_SystemIsError(t *testing.T) {
+	_, err := parseMiseCurrent("system\n")
+	if err == nil {
+		t.Error("expected error for 'system' (not a managed version)")
+	}
+}
+
+func TestParseMiseCurrent_Empty(t *testing.T) {
+	_, err := parseMiseCurrent("")
+	if err == nil {
+		t.Error("expected error on empty input")
+	}
+}
+
+func TestMiseCurrent_InvokesShell(t *testing.T) {
+	var captured string
+	withStubShell(t,
+		nil,
+		func(req string) (*platform.RunResult, error) {
+			captured = req
+			if req != "mise current node" {
+				t.Errorf("unexpected runShell call: %q", req)
+			}
+			return &platform.RunResult{Stdout: "22.11.0\n"}, nil
+		},
+	)
+
+	got, err := NewMise().Current()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.String() != "22.11.0" {
+		t.Errorf("got %q, want %q", got.String(), "22.11.0")
+	}
+	if captured == "" {
+		t.Error("expected mise current node to be invoked")
 	}
 }

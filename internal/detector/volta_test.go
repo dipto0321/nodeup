@@ -410,30 +410,137 @@ func TestVolta_ListInstalled_ListDirError(t *testing.T) {
 	}
 }
 
-func TestVolta_MutationMethodsReturnErrVoltaNotImplemented(t *testing.T) {
-	// Phase 1 only implements the detection surface. Mutation methods
-	// must return ErrVoltaNotImplemented so callers can distinguish
-	// "not yet implemented" from "succeeded with nil error".
+func TestVolta_MutationMethodsInvokeShell(t *testing.T) {
+	// Volta's mutation commands all take `node@<v>` rather than `<v>`
+	// directly. We verify each call wraps the version with the tool
+	// prefix so the CLI doesn't accidentally call `volta install 22.5.0`.
 	v := NewVolta()
 	ver, err := semver.NewVersion("22.5.0")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := v.Install(*ver); !errors.Is(err, ErrVoltaNotImplemented) {
-		t.Errorf("Install: got %v, want ErrVoltaNotImplemented", err)
+	type tc struct {
+		name    string
+		call    func() error
+		wantArg string
 	}
-	if err := v.Uninstall(*ver); !errors.Is(err, ErrVoltaNotImplemented) {
-		t.Errorf("Uninstall: got %v, want ErrVoltaNotImplemented", err)
+	cases := []tc{
+		{"Install", func() error { return v.Install(*ver) }, "install node@22.5.0"},
+		{"Uninstall", func() error { return v.Uninstall(*ver) }, "uninstall node@22.5.0"},
+		{"Use", func() error { return v.Use(*ver) }, "use node@22.5.0"},
 	}
-	if err := v.Use(*ver); !errors.Is(err, ErrVoltaNotImplemented) {
-		t.Errorf("Use: got %v, want ErrVoltaNotImplemented", err)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var captured string
+			withStubShell(t,
+				nil,
+				func(req string) (*platform.RunResult, error) {
+					captured = req
+					return &platform.RunResult{}, nil
+				},
+			)
+			if err := c.call(); err != nil {
+				t.Fatalf("%s: unexpected error: %v", c.name, err)
+			}
+			want := "volta " + c.wantArg
+			if captured != want {
+				t.Errorf("%s invoked %q, want %q", c.name, captured, want)
+			}
+		})
 	}
-	if err := v.SetDefault(*ver); !errors.Is(err, ErrVoltaNotImplemented) {
-		t.Errorf("SetDefault: got %v, want ErrVoltaNotImplemented", err)
+}
+
+func TestVolta_SetDefaultIsNoOp(t *testing.T) {
+	// Volta pins versions per-project, not per-machine. SetDefault
+	// must return nil without invoking the shell — callers can use
+	// the same code path regardless of which manager is active.
+	v := NewVolta()
+	ver, err := semver.NewVersion("22.5.0")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := v.GlobalNpmPrefix(*ver); !errors.Is(err, ErrVoltaNotImplemented) {
-		t.Errorf("GlobalNpmPrefix: got %v, want ErrVoltaNotImplemented", err)
+
+	// Force a fail if runShell is invoked.
+	orig := runShell
+	runShell = func(ctx context.Context, name string, a ...string) (*platform.RunResult, error) {
+		t.Fatalf("SetDefault must not invoke runShell for Volta (called %s %v)", name, a)
+		return nil, nil
+	}
+	t.Cleanup(func() { runShell = orig })
+
+	if err := v.SetDefault(*ver); err != nil {
+		t.Errorf("SetDefault = %v, want nil", err)
+	}
+}
+
+func TestVolta_Uninstall_PropagatesError(t *testing.T) {
+	wantErr := errors.New("simulated volta failure")
+	withStubShell(t, nil, func(req string) (*platform.RunResult, error) {
+		return nil, wantErr
+	})
+
+	v := semver.MustParse("20.0.0")
+	err := NewVolta().Uninstall(*v)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Errorf("error %v should wrap %v", err, wantErr)
+	}
+}
+
+// --- parseVoltaCurrent --------------------------------------------------
+
+func TestParseVoltaCurrent_ActiveNode(t *testing.T) {
+	// Real observed output of `volta list --format=plain`:
+	stdout := "node@v20.18.0 (active)\nnpm@10.5.0 (active)\npnpm@9.0.0 (default)\n"
+	v, err := parseVoltaCurrent(stdout)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v.String() != "20.18.0" {
+		t.Errorf("got %q, want %q", v.String(), "20.18.0")
+	}
+}
+
+func TestParseVoltaCurrent_NoActiveNode(t *testing.T) {
+	// Output contains no node@ row.
+	_, err := parseVoltaCurrent("npm@10.5.0 (active)\n")
+	if err == nil {
+		t.Error("expected error when no active node row present")
+	}
+}
+
+func TestParseVoltaCurrent_EmptyOutput(t *testing.T) {
+	_, err := parseVoltaCurrent("")
+	if err == nil {
+		t.Error("expected error on empty input")
+	}
+}
+
+func TestVoltaCurrent_InvokesShell(t *testing.T) {
+	var captured string
+	withStubShell(t,
+		nil,
+		func(req string) (*platform.RunResult, error) {
+			captured = req
+			if req != "volta list --format=plain" {
+				t.Errorf("unexpected runShell call: %q", req)
+			}
+			return &platform.RunResult{Stdout: "node@v22.11.0 (active)\n"}, nil
+		},
+	)
+
+	got, err := NewVolta().Current()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.String() != "22.11.0" {
+		t.Errorf("got %q, want %q", got.String(), "22.11.0")
+	}
+	if captured == "" {
+		t.Error("expected volta list to be invoked")
 	}
 }
 

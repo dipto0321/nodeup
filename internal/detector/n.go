@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -233,18 +235,142 @@ func parseNInstalled(stdout string) ([]semver.Version, error) {
 	return versions, nil
 }
 
-// --- Mutation stubs -----------------------------------------------------
+// --- Mutation methods ----------------------------------------------------
 //
-// Install, Uninstall, Use, SetDefault, and GlobalNpmPrefix return
-// ErrNNotImplemented. They will be filled in when the upgrade
-// command (Phase 4) needs to mutate state. Returning an explicit
-// sentinel error (rather than nil) makes "not implemented"
-// provably distinguishable from "succeeded".
+// Install, Uninstall, Use, SetDefault, GlobalNpmPrefix, and Current
+// for n all shell out to the `n` binary through runShell.
+//
+// Important n specifics:
+//   - Install / Use take a bare `<v>`: `n install <v>`, `n <v>`.
+//   - Uninstall takes a bare `<v>`: `n uninstall <v>`.
+//   - SetDefault is implicit: `n` always uses the latest installed
+//     version as the active one. There's no "default" command.
+//     We return nil (no-op) so callers can invoke SetDefault
+//     uniformly without special-casing n.
+//   - GlobalNpmPrefix follows n's on-disk layout: each version is
+//     in $N_PREFIX/n/versions/node/<v>/ with the global prefix
+//     at .../lib/node_modules.
+//   - Current is derived from `n current` (added in n 8+); older
+//     n versions return a non-zero exit, which we propagate as an
+//     error.
 
-func (n *N) Install(ver semver.Version) error    { return ErrNNotImplemented }
-func (n *N) Uninstall(ver semver.Version) error  { return ErrNNotImplemented }
-func (n *N) Use(ver semver.Version) error        { return ErrNNotImplemented }
-func (n *N) SetDefault(ver semver.Version) error { return ErrNNotImplemented }
+// Install runs `n install <v>`. n auto-uses the newly-installed
+// version, so there's no separate "default" step.
+func (n *N) Install(ver semver.Version) error {
+	res, err := runShell(context.Background(), "n", "install", ver.String())
+	if err != nil {
+		return fmt.Errorf("n install %s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// Uninstall runs `n uninstall <v>`. n refuses to uninstall the
+// active version (similar to fnm/nvm) — callers must `n <other>`
+// first to switch active versions.
+func (n *N) Uninstall(ver semver.Version) error {
+	res, err := runShell(context.Background(), "n", "uninstall", ver.String())
+	if err != nil {
+		return fmt.Errorf("n uninstall %s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// Use runs `n <v>` (the bare-form invocation) to switch the active
+// version in the current shell. This sets the symlink in
+// $N_PREFIX/bin/ via the n script's symlink_update logic.
+func (n *N) Use(ver semver.Version) error {
+	res, err := runShell(context.Background(), "n", ver.String())
+	if err != nil {
+		return fmt.Errorf("n %s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// SetDefault is a no-op for n — n auto-uses the latest installed
+// version, so there's no "default" concept to set. We intentionally
+// return nil so callers can invoke SetDefault uniformly without
+// special-casing n.
+func (n *N) SetDefault(ver semver.Version) error {
+	_ = ver // no-op
+	return nil
+}
+
+// GlobalNpmPrefix returns the per-version global npm directory for
+// the given version. n's on-disk layout is:
+//
+//	$N_PREFIX/n/versions/node/<v>/lib/node_modules
+//
+// Default $N_PREFIX is /usr/local.
 func (n *N) GlobalNpmPrefix(ver semver.Version) (string, error) {
-	return "", ErrNNotImplemented
+	dir := nPrefix()
+	if dir == "" {
+		return "", errors.New("n: cannot resolve N_PREFIX or /usr/local")
+	}
+	prefix := filepath.Join(dir, "n", "versions", "node", ver.String(), "lib", "node_modules")
+	if _, err := os.Stat(prefix); err != nil {
+		return "", fmt.Errorf("n global npm prefix for %s (looked at %s): %w", ver, prefix, err)
+	}
+	return prefix, nil
+}
+
+// nPrefix returns n's install root. Resolution order:
+//  1. $N_PREFIX (the official override)
+//  2. $N_CACHE_PREFIX (the alternative override)
+//  3. /usr/local (the documented default)
+//
+// Returns "" if none resolve. The default is hard-coded rather than
+// computed from $HOME because the upstream install script explicitly
+// targets /usr/local.
+func nPrefix() string {
+	if p := strings.TrimSpace(os.Getenv("N_PREFIX")); p != "" {
+		return p
+	}
+	if p := strings.TrimSpace(os.Getenv("N_CACHE_PREFIX")); p != "" {
+		// N_CACHE_PREFIX is the *cache* prefix (where downloads live),
+		// but if N_PREFIX isn't set, n defaults to using N_CACHE_PREFIX
+		// as the install root too. Match that behavior.
+		return p
+	}
+	return "/usr/local"
+}
+
+// Current returns the version n currently has active for the user.
+// Source: `n current` (added in n 8+). The output is a bare semver
+// like "22.11.0". On older n versions that don't have `n current`,
+// the call returns a non-zero exit code and we propagate that error.
+func (n *N) Current() (semver.Version, error) {
+	res, err := runShell(context.Background(), "n", "current")
+	if err != nil {
+		return semver.Version{}, fmt.Errorf("n current: %w", err)
+	}
+	return parseNCurrent(res.Stdout)
+}
+
+// parseNCurrent extracts the active version from `n current` output.
+// Exposed (lowercase) for direct unit testing.
+//
+// Real observed output (n 10.2.0):
+//
+//	22.11.0
+//
+// We take the first non-empty line, trim whitespace, strip an
+// optional "v" prefix, and feed the remainder to semver.NewVersion.
+// Older n versions that don't support `current` exit non-zero
+// before stdout — that error is propagated by runShell.
+func parseNCurrent(stdout string) (semver.Version, error) {
+	for _, raw := range strings.Split(stdout, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		v, err := semver.NewVersion(strings.TrimPrefix(line, "v"))
+		if err != nil {
+			return semver.Version{}, fmt.Errorf("n current: parse %q: %w", line, err)
+		}
+		return *v, nil
+	}
+	return semver.Version{}, errors.New("n current returned empty output")
 }

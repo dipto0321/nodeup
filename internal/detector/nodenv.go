@@ -300,18 +300,129 @@ func parseNodenvInstalled(stdout string) ([]semver.Version, error) {
 	return versions, nil
 }
 
-// --- Mutation stubs -----------------------------------------------------
+// --- Mutation methods ----------------------------------------------------
 //
-// Install, Uninstall, Use, SetDefault, and GlobalNpmPrefix return
-// ErrNodenvNotImplemented. They will be filled in when the upgrade
-// command (Phase 4) needs to mutate state. Returning an explicit
-// sentinel error (rather than nil) makes "not implemented" provably
-// distinguishable from "succeeded".
+// Install, Uninstall, Use, SetDefault, GlobalNpmPrefix, and Current
+// for Nodenv all shell out to the `nodenv` binary through runShell.
+//
+// Important Nodenv specifics:
+//   - Install / Uninstall take a bare `<v>`: `nodenv install <v>`.
+//   - Use runs `nodenv shell <v>` (current shell only).
+//   - SetDefault runs `nodenv global <v>` which writes to
+//     ~/.nodenv/version. This is what `nodeup upgrade` calls after
+//     Install.
+//   - GlobalNpmPrefix points at $NODENV_ROOT/versions/<v>/lib/node_modules.
+//   - Current runs `nodenv version` which prints the active version
+//     (or "system" if no version is set).
 
-func (nd *Nodenv) Install(ver semver.Version) error    { return ErrNodenvNotImplemented }
-func (nd *Nodenv) Uninstall(ver semver.Version) error  { return ErrNodenvNotImplemented }
-func (nd *Nodenv) Use(ver semver.Version) error        { return ErrNodenvNotImplemented }
-func (nd *Nodenv) SetDefault(ver semver.Version) error { return ErrNodenvNotImplemented }
+// Install runs `nodenv install <v>`. Nodenv delegates to
+// node-build (the bundled compiler-collection), so this can take a
+// while for a fresh install.
+func (nd *Nodenv) Install(ver semver.Version) error {
+	res, err := runShell(context.Background(), "nodenv", "install", ver.String())
+	if err != nil {
+		return fmt.Errorf("nodenv install %s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// Uninstall runs `nodenv uninstall <v>`. Nodenv allows uninstalling
+// the active version (the next shell call falls back to the system
+// Node or the previous ~/.nodenv/version pin).
+func (nd *Nodenv) Uninstall(ver semver.Version) error {
+	res, err := runShell(context.Background(), "nodenv", "uninstall", ver.String())
+	if err != nil {
+		return fmt.Errorf("nodenv uninstall %s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// Use runs `nodenv shell <v>` for the current shell. The shell subcommand
+// sets the version via the $NODENV_NODE_VERSION env var, which only the
+// current shell sees — to persist across sessions, call SetDefault.
+func (nd *Nodenv) Use(ver semver.Version) error {
+	res, err := runShell(context.Background(), "nodenv", "shell", ver.String())
+	if err != nil {
+		return fmt.Errorf("nodenv shell %s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// SetDefault runs `nodenv global <v>` which writes `<v>` (no "v"
+// prefix) to ~/.nodenv/version. This is what `nodeup upgrade` calls
+// after Install.
+func (nd *Nodenv) SetDefault(ver semver.Version) error {
+	res, err := runShell(context.Background(), "nodenv", "global", ver.String())
+	if err != nil {
+		return fmt.Errorf("nodenv global %s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// GlobalNpmPrefix returns the per-version global npm directory for
+// the given version. Nodenv's on-disk layout is:
+//
+//	$NODENV_ROOT/versions/<v>/lib/node_modules
 func (nd *Nodenv) GlobalNpmPrefix(ver semver.Version) (string, error) {
-	return "", ErrNodenvNotImplemented
+	dir := nodenvRoot()
+	if dir == "" {
+		return "", errors.New("nodenv: cannot resolve NODENV_ROOT or ~/.nodenv")
+	}
+	prefix := filepath.Join(dir, "versions", ver.String(), "lib", "node_modules")
+	if _, err := os.Stat(prefix); err != nil {
+		return "", fmt.Errorf("nodenv global npm prefix for %s (looked at %s): %w", ver, prefix, err)
+	}
+	return prefix, nil
+}
+
+// Current returns the version Nodenv currently has active for the
+// user. Source: `nodenv version`. The output is a bare semver like
+// "22.11.0" (no prefix on the version itself), or "system" when
+// the system Node is the active one. We treat "system" as an error
+// so the cleanup prompt doesn't try to exclude it.
+func (nd *Nodenv) Current() (semver.Version, error) {
+	res, err := runShell(context.Background(), "nodenv", "version")
+	if err != nil {
+		return semver.Version{}, fmt.Errorf("nodenv version: %w", err)
+	}
+	return parseNodenvCurrent(res.Stdout)
+}
+
+// parseNodenvCurrent extracts the active version from
+// `nodenv version` output. Exposed (lowercase) for direct unit
+// testing.
+//
+// Real observed output (nodenv 1.6.2):
+//
+//	22.11.0 (set by /home/user/.nodenv/version)
+//
+// or, when no version is set:
+//
+//	system
+//
+// We take the first whitespace-separated token, strip an optional
+// "v" prefix, and feed the remainder to semver.NewVersion. The
+// literal "system" is not a managed version and we return an
+// error so callers skip the active-version exclusion.
+func parseNodenvCurrent(stdout string) (semver.Version, error) {
+	out := strings.TrimSpace(stdout)
+	if out == "" {
+		return semver.Version{}, errors.New("nodenv version returned empty output")
+	}
+	fields := strings.Fields(out)
+	if len(fields) == 0 {
+		return semver.Version{}, errors.New("nodenv version returned no tokens")
+	}
+	if fields[0] == "system" {
+		return semver.Version{}, errors.New("nodenv current: 'system' is not a managed version")
+	}
+	v, err := semver.NewVersion(strings.TrimPrefix(fields[0], "v"))
+	if err != nil {
+		return semver.Version{}, fmt.Errorf("nodenv current: parse %q: %w", fields[0], err)
+	}
+	return *v, nil
 }

@@ -416,31 +416,118 @@ func TestASDF_Detect_EmptyASDF_DATA_DIR_FallsThrough(t *testing.T) {
 	}
 }
 
-// --- Mutation stubs -----------------------------------------------------
+// --- Mutation methods -------------------------------------------------
 
-func TestASDF_MutationMethods_NotImplemented(t *testing.T) {
-	// Phase 1: Install / Uninstall / Use / SetDefault / GlobalNpmPrefix
-	// return ErrASDFNotImplemented. This sentinel lets callers
-	// distinguish "not implemented" from other errors via errors.Is.
+func TestASDF_MutationMethodsInvokeShell(t *testing.T) {
+	// ASDF mutation commands all take `nodejs <v>` (the plugin name
+	// is `nodejs`, not `node`). We verify each call wraps the
+	// version with the plugin prefix so the CLI doesn't accidentally
+	// call `asdf install 22.5.0`.
 	a := NewASDF()
-	ver, _ := semver.NewVersion("20.0.0")
+	ver, err := semver.NewVersion("22.5.0")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if err := a.Install(*ver); !errors.Is(err, ErrASDFNotImplemented) {
-		t.Errorf("Install() = %v, want ErrASDFNotImplemented", err)
+	type tc struct {
+		name    string
+		call    func() error
+		wantArg string
 	}
-	if err := a.Uninstall(*ver); !errors.Is(err, ErrASDFNotImplemented) {
-		t.Errorf("Uninstall() = %v, want ErrASDFNotImplemented", err)
+	cases := []tc{
+		{"Install", func() error { return a.Install(*ver) }, "install nodejs 22.5.0"},
+		{"Uninstall", func() error { return a.Uninstall(*ver) }, "uninstall nodejs 22.5.0"},
+		{"Use", func() error { return a.Use(*ver) }, "shell nodejs 22.5.0"},
+		{"SetDefault", func() error { return a.SetDefault(*ver) }, "global nodejs 22.5.0"},
 	}
-	if err := a.Use(*ver); !errors.Is(err, ErrASDFNotImplemented) {
-		t.Errorf("Use() = %v, want ErrASDFNotImplemented", err)
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var captured string
+			withStubShell(t,
+				nil,
+				func(req string) (*platform.RunResult, error) {
+					captured = req
+					return &platform.RunResult{}, nil
+				},
+			)
+			if err := c.call(); err != nil {
+				t.Fatalf("%s: unexpected error: %v", c.name, err)
+			}
+			want := "asdf " + c.wantArg
+			if captured != want {
+				t.Errorf("%s invoked %q, want %q", c.name, captured, want)
+			}
+		})
 	}
-	if err := a.SetDefault(*ver); !errors.Is(err, ErrASDFNotImplemented) {
-		t.Errorf("SetDefault() = %v, want ErrASDFNotImplemented", err)
+}
+
+func TestASDF_Uninstall_PropagatesError(t *testing.T) {
+	wantErr := errors.New("simulated asdf failure")
+	withStubShell(t, nil, func(req string) (*platform.RunResult, error) {
+		return nil, wantErr
+	})
+
+	v := semver.MustParse("20.0.0")
+	err := NewASDF().Uninstall(*v)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
-	if p, err := a.GlobalNpmPrefix(*ver); !errors.Is(err, ErrASDFNotImplemented) {
-		t.Errorf("GlobalNpmPrefix() err = %v, want ErrASDFNotImplemented", err)
-	} else if p != "" {
-		t.Errorf("GlobalNpmPrefix() prefix = %q, want \"\"", p)
+	if !errors.Is(err, wantErr) {
+		t.Errorf("error %v should wrap %v", err, wantErr)
+	}
+}
+
+// --- parseASDFCurrent --------------------------------------------------
+
+func TestParseASDFCurrent_StandardOutput(t *testing.T) {
+	// Real observed output of `asdf current nodejs`:
+	stdout := "nodejs          22.11.0    (set by /home/user/.tool-versions)\n"
+	v, err := parseASDFCurrent(stdout)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v.String() != "22.11.0" {
+		t.Errorf("got %q, want %q", v.String(), "22.11.0")
+	}
+}
+
+func TestParseASDFCurrent_SystemIsError(t *testing.T) {
+	stdout := "nodejs          system\n"
+	_, err := parseASDFCurrent(stdout)
+	if err == nil {
+		t.Error("expected error for 'system' (not a managed version)")
+	}
+}
+
+func TestParseASDFCurrent_EmptyOutput(t *testing.T) {
+	_, err := parseASDFCurrent("")
+	if err == nil {
+		t.Error("expected error on empty input")
+	}
+}
+
+func TestASDFCurrent_InvokesShell(t *testing.T) {
+	var captured string
+	withStubShell(t,
+		nil,
+		func(req string) (*platform.RunResult, error) {
+			captured = req
+			if req != "asdf current nodejs" {
+				t.Errorf("unexpected runShell call: %q", req)
+			}
+			return &platform.RunResult{Stdout: "nodejs          22.11.0\n"}, nil
+		},
+	)
+
+	got, err := NewASDF().Current()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.String() != "22.11.0" {
+		t.Errorf("got %q, want %q", got.String(), "22.11.0")
+	}
+	if captured == "" {
+		t.Error("expected asdf current nodejs to be invoked")
 	}
 }
 

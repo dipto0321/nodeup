@@ -231,18 +231,173 @@ func parseNVMInstalledEntries(entries []os.DirEntry) ([]semver.Version, error) {
 	return versions, nil
 }
 
-// --- Mutation stubs -----------------------------------------------------
+// --- Mutation methods ----------------------------------------------------
 //
-// Install, Uninstall, Use, SetDefault, and GlobalNpmPrefix return
-// ErrNVMNotImplemented. They will be filled in when the upgrade command
-// (Phase 3) needs to mutate state. Returning an explicit sentinel error
-// (rather than nil) makes "not implemented" provably distinguishable
-// from "succeeded".
+// Install, Uninstall, Use, SetDefault, GlobalNpmPrefix, and Current
+// for NVM all go through runScript because nvm is a shell function
+// (not a binary on PATH) — we must `source` nvm.sh before invoking
+// any `nvm` subcommand. runScript picks the right shell per OS via
+// platform.RunShellScript.
+//
+// `nvm install` is special: it requires `nvm.sh` to be sourced AND
+// is the only nvm subcommand that prompts on stdin if the version is
+// already installed. We do NOT handle the prompt — callers that want
+// non-interactive behavior should pass `nvm install -s` (silent: no
+// prompt, exit non-zero if already installed).
+//
+// Like the other managers, error wrapping preserves
+// `errors.Is(err, platform.ErrNotFound)` so callers can detect a
+// missing shell / source file independently of nvm's own refusals.
 
-func (n *NVM) Install(v semver.Version) error    { return ErrNVMNotImplemented }
-func (n *NVM) Uninstall(v semver.Version) error  { return ErrNVMNotImplemented }
-func (n *NVM) Use(v semver.Version) error        { return ErrNVMNotImplemented }
-func (n *NVM) SetDefault(v semver.Version) error { return ErrNVMNotImplemented }
+// nvmScriptInvocation builds the bash one-liner that sources nvm.sh
+// and runs the given nvm subcommand. Centralizing this here keeps the
+// quoting (QuotePath) consistent across every mutation method.
+//
+// We quote the script path because it's almost always under $HOME
+// and users with spaces in their home dir are common on macOS.
+func nvmScriptInvocation(subcmd string) (string, error) {
+	script := nvmScriptPath()
+	if script == "" {
+		return "", errors.New("nvm not detected: cannot resolve nvm.sh path")
+	}
+	return fmt.Sprintf("source %s && nvm %s", platform.QuotePath(script), subcmd), nil
+}
+
+// Install runs `nvm install <v>` after sourcing nvm.sh. We pass `-s`
+// (silent / no prompt) so the upgrade command fails cleanly if the
+// version is already installed rather than hanging on a stdin
+// prompt in a non-interactive shell.
+func (n *NVM) Install(v semver.Version) error {
+	script, err := nvmScriptInvocation(fmt.Sprintf("install -s %s", v.String()))
+	if err != nil {
+		return err
+	}
+	res, err := runScript(context.Background(), script)
+	if err != nil {
+		return fmt.Errorf("nvm install %s: %w", v, err)
+	}
+	_ = res
+	return nil
+}
+
+// Uninstall runs `nvm uninstall <v>`. nvm refuses to uninstall the
+// currently-active version (similar to fnm); callers that want to
+// remove the active default should SetDefault first.
+func (n *NVM) Uninstall(v semver.Version) error {
+	script, err := nvmScriptInvocation(fmt.Sprintf("uninstall %s", v.String()))
+	if err != nil {
+		return err
+	}
+	res, err := runScript(context.Background(), script)
+	if err != nil {
+		return fmt.Errorf("nvm uninstall %s: %w", v, err)
+	}
+	_ = res
+	return nil
+}
+
+// Use runs `nvm use <v>` for the current shell. Like fnm's Use,
+// this only affects the subprocess's environment — for persistence
+// across sessions, call SetDefault.
+func (n *NVM) Use(v semver.Version) error {
+	script, err := nvmScriptInvocation(fmt.Sprintf("use %s", v.String()))
+	if err != nil {
+		return err
+	}
+	res, err := runScript(context.Background(), script)
+	if err != nil {
+		return fmt.Errorf("nvm use %s: %w", v, err)
+	}
+	_ = res
+	return nil
+}
+
+// SetDefault runs `nvm alias default <v>` to pin the version for new
+// shells. This is what `nodeup upgrade` calls after Install.
+func (n *NVM) SetDefault(v semver.Version) error {
+	script, err := nvmScriptInvocation(fmt.Sprintf("alias default %s", v.String()))
+	if err != nil {
+		return err
+	}
+	res, err := runScript(context.Background(), script)
+	if err != nil {
+		return fmt.Errorf("nvm alias default %s: %w", v, err)
+	}
+	_ = res
+	return nil
+}
+
+// GlobalNpmPrefix returns the per-version global npm prefix for the
+// given version. nvm's on-disk layout is:
+//
+//	$NVM_DIR/versions/node/<v>/lib/node_modules
+//
+// We probe the conventional path rather than calling `nvm exec` to
+// avoid spawning a subprocess for a pure path computation. The
+// directory may exist but be unreadable; in that case we return a
+// wrapped error so the migration step can fall back to a different
+// strategy.
 func (n *NVM) GlobalNpmPrefix(v semver.Version) (string, error) {
-	return "", ErrNVMNotImplemented
+	dir := nvmDir()
+	if dir == "" {
+		return "", errors.New("nvm: cannot resolve NVM_DIR or ~/.nvm")
+	}
+	// nvm names the dirs with a leading "v" prefix.
+	prefix := filepath.Join(dir, "versions", "node", "v"+v.String(), "lib", "node_modules")
+	if _, err := os.Stat(prefix); err != nil {
+		return "", fmt.Errorf("nvm global npm prefix for %s (looked at %s): %w", v, prefix, err)
+	}
+	return prefix, nil
+}
+
+// Current returns the version nvm currently has selected for new
+// shells — i.e., the resolved value of `nvm current`. The output is
+// either "vX.Y.Z" (with prefix) or "system" (when the active version
+// is the system Node). We map "system" to an error so callers can
+// treat it as "no nvm-managed version is active" rather than
+// silently treating system as a managed version.
+func (n *NVM) Current() (semver.Version, error) {
+	script, err := nvmScriptInvocation("current")
+	if err != nil {
+		return semver.Version{}, err
+	}
+	res, err := runScript(context.Background(), script)
+	if err != nil {
+		return semver.Version{}, fmt.Errorf("nvm current: %w", err)
+	}
+	return parseNVMCurrent(res.Stdout)
+}
+
+// parseNVMCurrent extracts the version from `nvm current` output.
+// Exposed (lowercase) for direct unit testing.
+//
+// Observed output (nvm 0.40.5):
+//
+//	v22.11.0
+//
+// or, when no nvm-managed version is active:
+//
+//	system
+//
+// We strip an optional "v" prefix and feed the remainder to
+// semver.NewVersion. The literal "system" is not a managed version
+// and we return an error so callers skip the active-version
+// exclusion (treating it as "we don't know what's active").
+func parseNVMCurrent(stdout string) (semver.Version, error) {
+	out := strings.TrimSpace(stdout)
+	if out == "" {
+		return semver.Version{}, errors.New("nvm current returned empty output")
+	}
+	if out == "system" || out == "none" {
+		// nvm prints "none" when no version is selected (rare;
+		// typically only after a `nvm deactivate`). Treat both as
+		// "no nvm-managed active version" so the cleanup prompt
+		// doesn't try to exclude "system" / "none".
+		return semver.Version{}, fmt.Errorf("nvm current: %q is not a managed version", out)
+	}
+	v, err := semver.NewVersion(strings.TrimPrefix(out, "v"))
+	if err != nil {
+		return semver.Version{}, fmt.Errorf("nvm current: parse %q: %w", out, err)
+	}
+	return *v, nil
 }

@@ -249,18 +249,155 @@ func parseVoltaInstalledEntries(entries []os.DirEntry) ([]semver.Version, error)
 	return versions, nil
 }
 
-// --- Mutation stubs -----------------------------------------------------
+// --- Mutation methods ----------------------------------------------------
 //
-// Install, Uninstall, Use, SetDefault, and GlobalNpmPrefix return
-// ErrVoltaNotImplemented. They will be filled in when the upgrade
-// command (Phase 4) needs to mutate state. Returning an explicit
-// sentinel error (rather than nil) makes "not implemented" provably
-// distinguishable from "succeeded".
+// Install, Uninstall, Use, SetDefault, GlobalNpmPrefix, and Current
+// for Volta all shell out to the `volta` binary through runShell.
+//
+// Important Volta specifics:
+//   - Install / Uninstall / Use take a tool name (`node`), not a bare
+//     version: `volta install node@<v>` not `volta install <v>`.
+//   - SetDefault is a no-op for Volta — Volta pins versions per
+//     project via `package.json` (the `volta` field), not per
+//     machine. We return nil so callers can call SetDefault
+//     uniformly without special-casing Volta.
+//   - GlobalNpmPrefix follows Volta's on-disk layout under
+//     $VOLTA_HOME/tools/image/node/<v>/lib/node_modules. Volta does
+//     NOT have a per-version npm global prefix the way fnm/nvm do
+//     — Volta's global prefix is shared across versions. We point
+//     at the image's bundled npm modules dir as a reasonable proxy.
+//   - Current is derived from `volta list --format=plain` (the
+//     first row is the active node version). Volta does not have a
+//     `volta current` subcommand.
 
-func (v *Volta) Install(ver semver.Version) error    { return ErrVoltaNotImplemented }
-func (v *Volta) Uninstall(ver semver.Version) error  { return ErrVoltaNotImplemented }
-func (v *Volta) Use(ver semver.Version) error        { return ErrVoltaNotImplemented }
-func (v *Volta) SetDefault(ver semver.Version) error { return ErrVoltaNotImplemented }
+// Install runs `volta install node@<v>`. Volta resolves the version
+// against its installed catalog and pins it as the active default
+// for the current user (no per-project pin unless the user already
+// has a `volta` field in package.json).
+func (v *Volta) Install(ver semver.Version) error {
+	res, err := runShell(context.Background(), "volta", "install", "node@"+ver.String())
+	if err != nil {
+		return fmt.Errorf("volta install node@%s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// Uninstall runs `volta uninstall node@<v>`. Volta silently allows
+// uninstalling the active version — the next shell call resolves to
+// the system Node (or fails outright if system Node is missing).
+func (v *Volta) Uninstall(ver semver.Version) error {
+	res, err := runShell(context.Background(), "volta", "uninstall", "node@"+ver.String())
+	if err != nil {
+		return fmt.Errorf("volta uninstall node@%s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// Use runs `volta use node@<v>` for the current shell. Like fnm/nvm
+// Use, this is per-shell only — Volta's persistent pin lives in
+// the project's package.json (which `nodeup upgrade` does NOT
+// touch, since it's not the user's project).
+func (v *Volta) Use(ver semver.Version) error {
+	res, err := runShell(context.Background(), "volta", "use", "node@"+ver.String())
+	if err != nil {
+		return fmt.Errorf("volta use node@%s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// SetDefault is a no-op for Volta — Volta pins versions per project
+// (in package.json's `volta` field) rather than per machine. We
+// intentionally return nil (not an error) so callers can invoke
+// SetDefault uniformly without special-casing Volta. Volta's
+// "default" after a fresh `volta install node@<v>` is implicit: it
+// becomes the version `volta` resolves to for shells that don't
+// have a project pin.
+func (v *Volta) SetDefault(ver semver.Version) error {
+	_ = ver // no-op
+	return nil
+}
+
+// GlobalNpmPrefix returns the per-version global npm directory for
+// the given version. Volta's on-disk layout is:
+//
+//	$VOLTA_HOME/tools/image/node/<v>/lib/node_modules
+//
+// This is the directory Volta installs globally-installed npm
+// packages into for the given version. Unlike fnm/nvm, Volta
+// doesn't really have a "global npm prefix per version" concept in
+// user-facing terms — Volta's `VOLTA_HOME` is shared across versions
+// — but the underlying layout is per-version, so this is the path
+// migration code should read.
 func (v *Volta) GlobalNpmPrefix(ver semver.Version) (string, error) {
-	return "", ErrVoltaNotImplemented
+	home := voltaHome()
+	if home == "" {
+		return "", errors.New("volta: cannot resolve VOLTA_HOME or ~/.volta")
+	}
+	prefix := filepath.Join(home, "tools", "image", "node", ver.String(), "lib", "node_modules")
+	if _, err := os.Stat(prefix); err != nil {
+		return "", fmt.Errorf("volta global npm prefix for %s (looked at %s): %w", ver, prefix, err)
+	}
+	return prefix, nil
+}
+
+// Current returns the version Volta currently has active for the
+// user. Source: `volta list --format=plain`. The plain format
+// prints one tool per line:
+//
+//	node@v20.18.0 (active)
+//
+// The first row matching "node@v" (or "node@" — Volta 2.0 changed
+// the prefix handling) is the active version. We strip the "v"
+// prefix (and the optional "active" suffix) before parsing.
+func (v *Volta) Current() (semver.Version, error) {
+	res, err := runShell(context.Background(), "volta", "list", "--format=plain")
+	if err != nil {
+		return semver.Version{}, fmt.Errorf("volta list: %w", err)
+	}
+	return parseVoltaCurrent(res.Stdout)
+}
+
+// parseVoltaCurrent extracts the active node version from
+// `volta list --format=plain` output. Exposed (lowercase) for direct
+// unit testing.
+//
+// Real observed output (volta 2.0.2):
+//
+//	node@v20.18.0 (active)
+//	npm@10.5.0 (active)
+//	pnpm@9.0.0 (default)
+//
+// We find the first row whose first field starts with "node@" and
+// strip everything from the "@" onwards, then drop an optional "v"
+// prefix and feed the remainder to semver.NewVersion. Lines that
+// don't match (npm, pnpm, yarn, ...) are skipped.
+func parseVoltaCurrent(stdout string) (semver.Version, error) {
+	for _, raw := range strings.Split(stdout, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		// We only care about node. Skip other tools' rows.
+		const nodePrefix = "node@"
+		if !strings.HasPrefix(line, nodePrefix) {
+			continue
+		}
+		// Take the version token after "node@", stopping at the
+		// first whitespace (e.g., " (active)" suffix).
+		rest := line[len(nodePrefix):]
+		if sp := strings.IndexFunc(rest, func(r rune) bool {
+			return r == ' ' || r == '\t'
+		}); sp >= 0 {
+			rest = rest[:sp]
+		}
+		v, err := semver.NewVersion(strings.TrimPrefix(rest, "v"))
+		if err != nil {
+			return semver.Version{}, fmt.Errorf("volta current: parse %q: %w", rest, err)
+		}
+		return *v, nil
+	}
+	return semver.Version{}, errors.New("volta list did not contain an active node version")
 }

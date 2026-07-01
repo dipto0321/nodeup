@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -266,18 +268,145 @@ func parseMiseInstalled(stdout string) ([]semver.Version, error) {
 	return versions, nil
 }
 
-// --- Mutation stubs -----------------------------------------------------
+// --- Mutation methods ----------------------------------------------------
 //
-// Install, Uninstall, Use, SetDefault, and GlobalNpmPrefix return
-// ErrMiseNotImplemented. They will be filled in when the upgrade
-// command (Phase 4) needs to mutate state. Returning an explicit
-// sentinel error (rather than nil) makes "not implemented" provably
-// distinguishable from "succeeded".
+// Install, Uninstall, Use, SetDefault, GlobalNpmPrefix, and Current
+// for Mise all shell out to the `mise` binary through runShell.
+//
+// Important Mise specifics:
+//   - Mise takes `node@<v>` rather than `<v>`: `mise install node@<v>`.
+//   - SetDefault runs `mise use --global node@<v>` which writes the
+//     pin to ~/.config/mise/config.toml. This is what `nodeup
+//     upgrade` calls after Install.
+//   - Use runs `mise use node@<v>` which writes the pin to the
+//     local ./mise.toml (NOT what we want for a system-wide upgrade —
+//     `nodeup upgrade` calls SetDefault instead, but the per-shell
+//     Use is exposed for completeness).
+//   - GlobalNpmPrefix points at $MISE_DATA_DIR/installs/node/<v>/lib/node_modules.
+//   - Current runs `mise current node` which emits just `<v>`.
 
-func (m *Mise) Install(ver semver.Version) error    { return ErrMiseNotImplemented }
-func (m *Mise) Uninstall(ver semver.Version) error  { return ErrMiseNotImplemented }
-func (m *Mise) Use(ver semver.Version) error        { return ErrMiseNotImplemented }
-func (m *Mise) SetDefault(ver semver.Version) error { return ErrMiseNotImplemented }
+// Install runs `mise install node@<v>`. Mise takes the tool name as
+// part of the spec (`node@<v>`), not as a separate positional arg.
+func (m *Mise) Install(ver semver.Version) error {
+	res, err := runShell(context.Background(), "mise", "install", "node@"+ver.String())
+	if err != nil {
+		return fmt.Errorf("mise install node@%s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// Uninstall runs `mise uninstall node@<v>`. Mise silently allows
+// uninstalling the active version — the next shell call resolves to
+// the previous tool-versions pin or fails if there is none.
+func (m *Mise) Uninstall(ver semver.Version) error {
+	res, err := runShell(context.Background(), "mise", "uninstall", "node@"+ver.String())
+	if err != nil {
+		return fmt.Errorf("mise uninstall node@%s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// Use runs `mise use node@<v>` for the current shell. Note this
+// writes the pin to the LOCAL ./mise.toml (per-project), not the
+// global config — `nodeup upgrade` calls SetDefault instead.
+func (m *Mise) Use(ver semver.Version) error {
+	res, err := runShell(context.Background(), "mise", "use", "node@"+ver.String())
+	if err != nil {
+		return fmt.Errorf("mise use node@%s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// SetDefault runs `mise use --global node@<v>` which writes the
+// `node = "<v>"` line to ~/.config/mise/config.toml. This is what
+// `nodeup upgrade` calls after Install.
+func (m *Mise) SetDefault(ver semver.Version) error {
+	res, err := runShell(context.Background(), "mise", "use", "--global", "node@"+ver.String())
+	if err != nil {
+		return fmt.Errorf("mise use --global node@%s: %w", ver, err)
+	}
+	_ = res
+	return nil
+}
+
+// GlobalNpmPrefix returns the per-version global npm directory for
+// the given version. Mise's on-disk layout is:
+//
+//	$MISE_DATA_DIR/installs/node/<v>/lib/node_modules
+//
+// Default $MISE_DATA_DIR is ~/.local/share/mise.
 func (m *Mise) GlobalNpmPrefix(ver semver.Version) (string, error) {
-	return "", ErrMiseNotImplemented
+	dir := miseDataDir()
+	if dir == "" {
+		return "", errors.New("mise: cannot resolve MISE_DATA_DIR or ~/.local/share/mise")
+	}
+	prefix := filepath.Join(dir, "installs", "node", ver.String(), "lib", "node_modules")
+	if _, err := os.Stat(prefix); err != nil {
+		return "", fmt.Errorf("mise global npm prefix for %s (looked at %s): %w", ver, prefix, err)
+	}
+	return prefix, nil
+}
+
+// miseDataDir returns Mise's data root — where installs live.
+// Resolution order:
+//  1. $MISE_DATA_DIR (the official override)
+//  2. ~/.local/share/mise (the documented default per mise install)
+//
+// Returns "" if neither resolves.
+func miseDataDir() string {
+	if d := strings.TrimSpace(os.Getenv("MISE_DATA_DIR")); d != "" {
+		return d
+	}
+	home, err := homeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".local", "share", "mise")
+}
+
+// Current returns the version Mise currently has active for the
+// user. Source: `mise current node`. The output is a bare semver
+// like "22.11.0" (with optional "v" prefix on some builds).
+func (m *Mise) Current() (semver.Version, error) {
+	res, err := runShell(context.Background(), "mise", "current", "node")
+	if err != nil {
+		return semver.Version{}, fmt.Errorf("mise current node: %w", err)
+	}
+	return parseMiseCurrent(res.Stdout)
+}
+
+// parseMiseCurrent extracts the active version from `mise current
+// node` output. Exposed (lowercase) for direct unit testing.
+//
+// Real observed output (mise 2026.6.15):
+//
+//	22.11.0
+//
+// or, when no version is active:
+//
+//	# some mise builds print nothing or "system"
+//
+// We take the first non-empty line, strip whitespace, strip an
+// optional "v" prefix, and feed the remainder to semver.NewVersion.
+// The literal "system" is not a managed version and we return an
+// error so callers skip the active-version exclusion.
+func parseMiseCurrent(stdout string) (semver.Version, error) {
+	for _, raw := range strings.Split(stdout, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		if line == "system" {
+			return semver.Version{}, errors.New("mise current: 'system' is not a managed version")
+		}
+		v, err := semver.NewVersion(strings.TrimPrefix(line, "v"))
+		if err != nil {
+			return semver.Version{}, fmt.Errorf("mise current: parse %q: %w", line, err)
+		}
+		return *v, nil
+	}
+	return semver.Version{}, errors.New("mise current node returned empty output")
 }
