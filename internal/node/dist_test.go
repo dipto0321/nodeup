@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,7 +13,39 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/dipto0321/nodeup/internal/platform"
 )
+
+// TestMain gives the whole package a throwaway home directory so no
+// test — present or future — can touch the real user's nodeup data
+// or cache dirs, even if it forgets to call withEmptyCache. This is
+// the structural guard for issue #110: before it existed, a fetch
+// test that redirected manifestURL but not the cache paths wrote its
+// fixture manifest into the developer's real cache, and `nodeup
+// check` served that fixture for the next 24h.
+func TestMain(m *testing.M) {
+	tmp, err := os.MkdirTemp("", "nodeup-node-test-home-*")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "TestMain: create temp home: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Cover every var platform.DataDir() reads across the three OSes:
+	// HOME/USERPROFILE (darwin + unix fallback), XDG_DATA_HOME (linux),
+	// APPDATA (windows). XDG_CACHE_HOME is legacy coverage for the
+	// pre-#110 os.UserCacheDir() location.
+	os.Setenv("HOME", tmp)
+	os.Setenv("USERPROFILE", tmp)
+	os.Setenv("XDG_DATA_HOME", filepath.Join(tmp, "xdg-data"))
+	os.Setenv("XDG_CACHE_HOME", filepath.Join(tmp, "xdg-cache"))
+	os.Setenv("APPDATA", filepath.Join(tmp, "AppData", "Roaming"))
+	os.Setenv("LOCALAPPDATA", filepath.Join(tmp, "AppData", "Local"))
+
+	code := m.Run()
+	_ = os.RemoveAll(tmp)
+	os.Exit(code)
+}
 
 func TestLatestLTS(t *testing.T) {
 	c1 := "Argon"
@@ -241,32 +274,50 @@ const validManifestBody = `[
 	{"version":"v24.0.0","date":"2025-04-01","lts":false}
 ]`
 
-// withEmptyCache steers defaultCachePaths at an isolated tempdir so
-// the fetch tests don't pick up whatever's already in the user's
-// real cache (which would short-circuit every server-driven test
-// with a stale-but-fresh manifest read). We swap the package-level
-// lookup via a t.Cleanup that restores defaultCachePaths to its
-// hardcoded behavior.
+// withEmptyCache steers defaultCachePaths at an isolated per-test
+// tempdir so the fetch tests don't pick up cache state left by an
+// earlier test in this package (TestMain already guarantees nothing
+// leaks to the real user's dirs; this adds test-to-test isolation
+// on top, since a saved manifest from one fetch test would
+// short-circuit the next with a fresh-cache read).
 //
-// The implementation works by overriding the OS user-cache-dir
-// lookup via env vars so defaultCachePaths() resolves under
-// t.TempDir(). Specifically we set XDG_CACHE_HOME (which
-// os.UserCacheDir honors on Linux + macOS) and HOME / USERPROFILE
-// fallbacks. APPDATA is also cleared so the Windows branch doesn't
-// bypass HOME.
+// The cache lives under platform.CacheDir() = <DataDir>/cache, so we
+// override every env var platform.DataDir() reads: HOME/USERPROFILE
+// (darwin + unix fallback), XDG_DATA_HOME (linux preference), and
+// APPDATA (windows — cleared so the Windows branch falls back to the
+// HOME-derived path inside the tempdir).
 func withEmptyCache(t *testing.T) {
 	t.Helper()
 	tmp := t.TempDir()
-	t.Setenv("XDG_CACHE_HOME", tmp)
-	t.Setenv("APPDATA", "")
-	// On darwin os.UserCacheDir reads ~/Library/Caches regardless of
-	// XDG_CACHE_HOME; force a HOME override so that directory lives
-	// under our tempdir.
 	t.Setenv("HOME", tmp)
 	t.Setenv("USERPROFILE", tmp)
-	// Some platforms also honor LOCALAPPDATA — clear it for the same
-	// reason as APPDATA.
+	t.Setenv("XDG_DATA_HOME", filepath.Join(tmp, "xdg-data"))
+	t.Setenv("APPDATA", "")
 	t.Setenv("LOCALAPPDATA", "")
+}
+
+// TestCachePathUnderPlatformCacheDir pins the manifest cache to the
+// documented on-disk layout: <DataDir>/cache per platform.CacheDir().
+// Issue #110: an earlier revision cached under os.UserCacheDir()/nodeup,
+// leaving the documented cache dir empty while data accumulated in an
+// undocumented one.
+func TestCachePathUnderPlatformCacheDir(t *testing.T) {
+	withEmptyCache(t)
+
+	got, err := cachePath()
+	if err != nil {
+		t.Fatalf("cachePath: %v", err)
+	}
+	want, err := platform.CacheDir()
+	if err != nil {
+		t.Fatalf("platform.CacheDir: %v", err)
+	}
+	if filepath.Dir(got) != want {
+		t.Errorf("cachePath() dir = %s, want platform.CacheDir() = %s", filepath.Dir(got), want)
+	}
+	if filepath.Base(got) != "node-dist-index.json" {
+		t.Errorf("cachePath() basename = %s, want node-dist-index.json", filepath.Base(got))
+	}
 }
 
 // TestFetchManifestCtx_Success covers the happy path: a 200 JSON
