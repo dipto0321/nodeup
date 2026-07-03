@@ -231,8 +231,36 @@ func runCleanupPrompt(cfg cleanupConfig, toInstall, installed []semver.Version, 
 	}
 
 	// Step 4: Per-version loop.
+	//
+	// Per-version confirmation is "sticky-up" only — once the user
+	// has explicitly opted into deletion at a higher level (the
+	// all-or-nothing prompt's `deleteAll` or `deleteOne`, or a
+	// pre-flagged `--cleanup` / `--yes` / `--cleanup-version` /
+	// `cfg.Cleanup.Auto`), we MUST NOT re-prompt per version. The
+	// old behavior (a second `Delete vX? [y/N]` for each candidate,
+	// where empty / non-y input silently skipped the deletion) was
+	// a real regression: users who answered `y` once at the
+	// all-or-nothing prompt would see nothing deleted if their
+	// terminal session's input stream ended before they re-answered
+	// for every candidate. The fix is to set `cfg.PerVersion = false`
+	// for the loop once a higher-level confirmation has been
+	// recorded. The ForcePerVersion downgrade (Step 1b) is the only
+	// path that keeps per-version on, because it represents an
+	// inability to safely exclude the active version — see #58.
+	if !cfg.ForcePerVersion {
+		// Higher-level confirmation → no per-version prompt.
+		// ForcePerVersion explicitly overrides this in Step 1b
+		// by setting `cfg.PerVersion = true`, so by the time we
+		// reach here, the only configs that still have
+		// PerVersion=true are (a) a default-true cfg.Cleanup.Prompt
+		// without any higher-level confirmation (e.g. an empty
+		// cfg.Prefiltered + a user who answered `n`/`skip` — but
+		// that case returns before reaching Step 4) or (b) the
+		// ForcePerVersion downgrade. Path (b) is the one we want
+		// to preserve; path (a) can't reach Step 4.
+		cfg.PerVersion = false
+	}
 	for _, v := range toOffer {
-		confirm := true
 		if cfg.PerVersion {
 			answer, err := promptPerVersion(v, streams)
 			if err != nil {
@@ -243,7 +271,6 @@ func runCleanupPrompt(cfg cleanupConfig, toInstall, installed []semver.Version, 
 				result.Skipped = append(result.Skipped, v)
 				continue
 			}
-			_ = confirm
 		}
 
 		if err := m.Uninstall(v); err != nil {

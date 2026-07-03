@@ -607,6 +607,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `<goos>/<goarch>` platform pattern, and `--check` flag is a
   no-op not an error) so a future refactor can't silently drop
   a field. Closes #68.
+- `internal/cli/cleanup.go`: confirmation at the post-upgrade
+  cleanup's all-or-nothing prompt is now sticky — answering
+  `y` (delete all) or a specific version at the "What would you
+  like to do?" prompt no longer triggers a second, separate
+  per-version `Delete vX? [y/N]` loop on top of the explicit
+  confirmation. Pre-fix, the per-version loop fired unconditionally
+  for every candidate in `toOffer`, because `cfg.PerVersion`
+  defaults to `true` from `cfg.Cleanup.Prompt`'s config default —
+  so a user who answered `y` once at the all-or-nothing prompt
+  saw nothing deleted if their terminal session's input stream
+  ended before they re-answered for every candidate (the
+  `default:` branch of `promptPerVersion` returns `false`, and
+  empty / non-`y` input landed each version in `result.Skipped`
+  with no visible error). User reported live: answered `y` at
+  the cleanup prompt during a real `nodeup upgrade`, then
+  `fnm list` afterward still showed the old versions — no
+  deletion occurred, with no surface indication of why.
+  Fix: set `cfg.PerVersion = false` for the per-version loop
+  once a higher-level confirmation has been recorded. Three
+  classes of higher-level confirmation trigger this:
+  1. **`decision.deleteAll`** — `y` / `yes` at the all-or-nothing
+     prompt.
+  2. **`decision.deleteOne`** — a specific version typed at the
+     all-or-nothing prompt (the user's choice IS the per-version
+     confirmation).
+  3. **`AutoDeleteAll` (without `ForcePerVersion`)** — set by
+     `--cleanup`, `--yes`, or `cfg.Cleanup.Auto`. The user's
+     pre-flight opt-in counts; the per-version prompt is redundant.
+  The `ForcePerVersion` downgrade from #58 is the only path that
+  keeps `cfg.PerVersion = true` after Step 1b, because it
+  represents an inability to safely exclude the active version
+  — see `TestCleanupPrompt_ForcePerVersionDowngradesAutoDeleteAll`,
+  `TestCleanupPrompt_ForcePerVersionIgnoresPerVersionFalse`, and
+  `TestCleanupPrompt_ForcePerVersionWithNonInteractive` for the
+  preservation. `TestCleanupPrompt_PerVersionConfirm` and
+  `TestCleanupPrompt_SpecificVersion` (the tests that pinned
+  the buggy double-prompt behavior) are updated to assert the
+  new correct behavior; `TestCleanupPrompt_DeleteAllSkipsPerVersionPrompt`
+  is the explicit regression test for #76. Closes #76.
 
 ## [0.0.0] - 2024-07-01
 
