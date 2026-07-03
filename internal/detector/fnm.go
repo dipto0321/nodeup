@@ -244,7 +244,7 @@ func (f *FNM) GlobalNpmPrefix(v semver.Version) (string, error) {
 			// Older fnm layout (no `installation/` subdir).
 			prefix = filepath.Join(dir, "lib", "node_modules")
 			if _, err2 := os.Stat(prefix); err2 != nil {
-				return "", fmt.Errorf("fnm global npm prefix for %s not found at %s or %s", v, prefix, filepath.Join(dir, "installation", "lib", "node_modules"))
+				return "", fmt.Errorf("fnm global npm prefix for %s not found at %s or %s: %w", v, prefix, filepath.Join(dir, "installation", "lib", "node_modules"), err2)
 			}
 		} else {
 			return "", fmt.Errorf("stat fnm prefix %s: %w", prefix, err)
