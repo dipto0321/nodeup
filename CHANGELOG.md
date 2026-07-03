@@ -267,6 +267,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `asdfDataDir()` already used and the official asdf docs.
   Updated `system_node_test.go`'s "asdf env wins" case to drive
   the new variable. Closes #50.
+- `internal/cli/packages.go` (`runRestore` and `runDiff`): the
+  `<manager>` positional argument is now validated against a
+  canonical allowlist (`detector.IsAllowedManagerName`) before any
+  filesystem path is constructed. Pre-fix, the manager name was
+  interpolated verbatim into a snapshot filename
+  (`fmt.Sprintf("%s-%s.json", managerName, version)`) and the
+  result was `filepath.Join`'d into the snapshots dir — and
+  `filepath.Join` collapses `..` segments, so a manager name like
+  `../../tmp/evil` resolved outside the snapshots directory. An
+  attacker with a local file-placement primitive (a shared temp
+  directory, a cloned repo containing a payload filename like
+  `<prefix>../../tmp/evil-1.0.0.json`) could have the resulting
+  snapshot's `Packages` list piped straight into
+  `npm install -g <name>@<version>` with no validation. The
+  allowlist is built from `detector.AllowedManagerNames()` (a new
+  helper that derives the list from `detector.All()`), so the
+  set stays in sync with the per-platform build files; the match
+  is byte-for-byte case-sensitive (matching the `--manager` flag),
+  and the error message surfaces the offender and the allowlist
+  so typos remain user-fixable. `internal/detector/manager_names.go`
+  (new file) holds the helpers; `manager_names_test.go` pins
+  AllowedManagerNames ↔ All() parity and IsAllowedManagerName
+  behaviour (incl. traversal payloads, case-fold negativity, and
+  near-miss strings). Closes #51.
 
 ## [0.0.0] - 2024-07-01
 

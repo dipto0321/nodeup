@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/spf13/cobra"
@@ -175,6 +176,16 @@ func runRestore(cmd *cobra.Command, args []string) error {
 	managerName := args[0]
 	versionStr := args[1]
 
+	// Validate the manager name against the canonical allowlist before
+	// it touches any file path. A name like `../../tmp/evil` would
+	// otherwise pass straight into snapshotPath and, after
+	// `filepath.Join` collapses the `..` segments, resolve outside
+	// <DataDir>/snapshots — letting an attacker with a local
+	// file-placement primitive redirect the snapshot read. See #51.
+	if !detector.IsAllowedManagerName(managerName) {
+		return fmt.Errorf("invalid manager name %q (allowed: %s)", managerName, strings.Join(detector.AllowedManagerNames(), ", "))
+	}
+
 	v, err := semver.NewVersion(versionStr)
 	if err != nil {
 		return fmt.Errorf("invalid version: %w", err)
@@ -200,6 +211,12 @@ func newDiffCmd() *cobra.Command {
 
 func runDiff(cmd *cobra.Command, args []string) error {
 	managerName := args[0]
+
+	// Validate before constructing any snapshot path — same reasoning
+	// as runRestore above. See #51.
+	if !detector.IsAllowedManagerName(managerName) {
+		return fmt.Errorf("invalid manager name %q (allowed: %s)", managerName, strings.Join(detector.AllowedManagerNames(), ", "))
+	}
 
 	s1, err := packages.LoadSnapshot(managerName, args[1])
 	if err != nil {
