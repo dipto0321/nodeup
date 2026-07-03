@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+
+	"github.com/dipto0321/nodeup/internal/platform"
 )
 
 // ManifestVersion represents a single entry from nodejs.org/dist/index.json.
@@ -363,18 +365,20 @@ func parseVersion(s string) (*semver.Version, error) {
 }
 
 // cachePath returns the path to the cached manifest file.
+//
+// The cache lives under platform.CacheDir() (<DataDir>/cache) — the
+// single documented on-disk location for everything nodeup persists.
+// An earlier revision used os.UserCacheDir()/nodeup, which diverged
+// from CLAUDE.md's layout and left the documented cache dir empty
+// while data accumulated elsewhere. See issue #110. The legacy
+// directory is not migrated or deleted: worst case is one cold fetch
+// after upgrading.
 func cachePath() (string, error) {
-	cacheDir, err := os.UserCacheDir()
+	cacheDir, err := platform.CacheDir()
 	if err != nil {
 		return "", err
 	}
-
-	appDir := filepath.Join(cacheDir, "nodeup")
-	if err := os.MkdirAll(appDir, 0o755); err != nil {
-		return "", err
-	}
-
-	return filepath.Join(appDir, "node-dist-index.json"), nil
+	return filepath.Join(cacheDir, "node-dist-index.json"), nil
 }
 
 // cacheMetaPath returns the path to the cache metadata file (stores expiry).
