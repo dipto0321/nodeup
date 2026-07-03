@@ -238,7 +238,8 @@ func parseNInstalled(stdout string) ([]semver.Version, error) {
 // --- Mutation methods ----------------------------------------------------
 //
 // Install, Uninstall, Use, SetDefault, GlobalNpmPrefix, and Current
-// for n all shell out to the `n` binary through runShell.
+// for n all shell out to either the `n` binary or to the active
+// node binary through runShell.
 //
 // Important n specifics:
 //   - Install / Use take a bare `<v>`: `n install <v>`, `n <v>`.
@@ -250,9 +251,13 @@ func parseNInstalled(stdout string) ([]semver.Version, error) {
 //   - GlobalNpmPrefix follows n's on-disk layout: each version is
 //     in $N_PREFIX/n/versions/node/<v>/ with the global prefix
 //     at .../lib/node_modules.
-//   - Current is derived from `n current` (added in n 8+); older
-//     n versions return a non-zero exit, which we propagate as an
-//     error.
+//   - Current is derived from `<N_PREFIX>/bin/node --version` —
+//     n's `activate` copies the active node binary into that
+//     path, so its `--version` reports the active version. We
+//     deliberately do NOT use `n current`: that string falls
+//     through to upstream's default dispatch arm which calls
+//     `install`, side-effecting a download of the latest
+//     version. See #59.
 
 // Install runs `n install <v>`. n auto-uses the newly-installed
 // version, so there's no separate "default" step.
@@ -338,29 +343,60 @@ func nPrefix() string {
 }
 
 // Current returns the version n currently has active for the user.
-// Source: `n current` (added in n 8+). The output is a bare semver
-// like "22.11.0". On older n versions that don't have `n current`,
-// the call returns a non-zero exit code and we propagate that error.
+//
+// Strategy: invoke `<N_PREFIX>/bin/node --version` and parse the
+// output. n's `activate` function (bin/n) copies the active
+// version's `bin/node` into `$N_PREFIX/bin/node`, so the active
+// node binary's `--version` IS the active version — without
+// requiring a separate "what's active?" subcommand.
+//
+// Why not `n current`? That subcommand doesn't exist as a
+// first-class dispatch arm in upstream `tj/n` (bin/n's case
+// statement). `n current` falls through to the default `*)`
+// arm which calls `install "$1"`, which resolves "current" as
+// a label equivalent to "latest" and **downloads and installs
+// the newest available Node.js version**. So calling
+// `N.Current()` would have silently mutated the user's machine
+// on every invocation — defeating the cleanup safety net on
+// every n install, every run. See #59.
+//
+// On platforms where `$N_PREFIX` is empty (the helper returned
+// ""), or `$N_PREFIX/bin/node` is missing, or the subprocess
+// fails, we return an error — the caller treats that as
+// "active version unknown, don't exclude it" (the safe-by-
+// convention default per the Manager interface doc).
 func (n *N) Current() (semver.Version, error) {
-	res, err := runShell(context.Background(), "n", "current")
-	if err != nil {
-		return semver.Version{}, fmt.Errorf("n current: %w", err)
+	prefix := nPrefix()
+	if prefix == "" {
+		return semver.Version{}, errors.New("n: cannot resolve N_PREFIX or /usr/local")
 	}
-	return parseNCurrent(res.Stdout)
+	nodeBin := filepath.Join(prefix, "bin", "node")
+	// We don't pre-Stat nodeBin here — let the shell-out error
+	// surface the "not installed" case in a single round-trip
+	// (the runShell error message will already name the missing
+	// path), rather than paying for a stat that we'd race
+	// against a concurrent uninstall.
+	res, err := runShell(context.Background(), nodeBin, "--version")
+	if err != nil {
+		return semver.Version{}, fmt.Errorf("n current: %s --version: %w", nodeBin, err)
+	}
+	return parseNNodeVersion(res.Stdout)
 }
 
-// parseNCurrent extracts the active version from `n current` output.
-// Exposed (lowercase) for direct unit testing.
+// parseNNodeVersion extracts the active version from
+// `<N_PREFIX>/bin/node --version` output. Exposed (lowercase)
+// for direct unit testing.
 //
-// Real observed output (n 10.2.0):
+// Real observed output (node 22.11.0):
 //
-//	22.11.0
+//	v22.11.0
 //
 // We take the first non-empty line, trim whitespace, strip an
-// optional "v" prefix, and feed the remainder to semver.NewVersion.
-// Older n versions that don't support `current` exit non-zero
-// before stdout — that error is propagated by runShell.
-func parseNCurrent(stdout string) (semver.Version, error) {
+// optional "v" prefix, and feed the remainder to
+// semver.NewVersion. node(1) has been emitting the
+// `vX.Y.Z` form since its earliest public releases, so this is
+// stable across every n-supported Node version.
+func parseNNodeVersion(stdout string) (semver.Version, error) {
 	for _, raw := range strings.Split(stdout, "\n") {
 		line := strings.TrimSpace(raw)
 		if line == "" {
@@ -372,5 +408,5 @@ func parseNCurrent(stdout string) (semver.Version, error) {
 		}
 		return *v, nil
 	}
-	return semver.Version{}, errors.New("n current returned empty output")
+	return semver.Version{}, errors.New("n current: <node --version> returned empty output")
 }
