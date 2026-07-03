@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   platform); its stubs still return
   `ErrNVMWindowsNotImplemented` so callers can detect and skip.
   Per-manager cleanup behavior is documented in
-  `docs/managers.md#post-upgrade-cleanup`. Closes #40.
+  `docs/managers.md#post-upgrade-cleanup`.
 
 ### Added (continued)
 - YAML config file support (`internal/config`): the documented schema
@@ -669,6 +669,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dependencies line listed `gjson` and `yaml.v3` as "planned
   but not yet in go.mod" — `yaml.v3` is in go.mod (used by
   the config subsystem), `gjson` was never added. Closes #54.
+- Post-upgrade cleanup docs inaccuracies introduced alongside PR
+  #56 / issue #41: `CHANGELOG.md`'s "Native mutation commands"
+  bullet cited `#40` (an unrelated `chore(ci): gitignore`
+  issue) — the citation is dropped (the preceding bullet
+  already closes #41). `docs/managers.md` described a
+  fabricated nvm-windows-specific cleanup-suppression note
+  that doesn't exist in the code — replaced with the real
+  behavior: the cleanup prompt still runs against nvm-windows,
+  each `Uninstall()` surfaces `ErrNVMWindowsNotImplemented`
+  via the generic per-candidate failure line, and the
+  `ForcePerVersion` downgrade (from #58) kicks in so even
+  `--cleanup` / `--yes` / `cleanup.auto: true` fall back to
+  y/N per candidate. The "Manager not on PATH" failure mode
+  was described as "cleanup is skipped; upgrade still
+  completes" — corrected to match `detector.ResolveManager`'s
+  `ErrNoManager` abort, which fails the entire upgrade
+  command before install/migrate/cleanup. README's
+  "Phase 7 ✅" line was reconciled with
+  `docs/managers.md`'s "Phase 7 in progress" banner:
+  README now uses "Phase 7 🔧 (in progress)" and notes that
+  cleanup + mutation have shipped while distribution
+  packaging (#17 / #18) is the remaining Phase 7 work.
+  Closes #60.
 
 ## [0.0.0] - 2024-07-01
 

@@ -77,7 +77,7 @@ bin dir (e.g., `fnm env --use-on-cd | source`, or add
 points at a binary inside the manager's data dir, nodeup's next
 run will classify it as `manager` and proceed without warning.
 
-> _Status: Phase 7 in progress — post-upgrade cleanup + native mutation commands per manager._
+> _Status: Phase 7 in progress — post-upgrade cleanup prompt and per-manager native mutation commands have shipped (PR #56 / issue #41). Distribution packaging (GoReleaser, brew/scoop taps, npm wrapper) is the remaining Phase 7 work — see issues #17 and #18. README's "Phase 7 ✅" line refers to the cleanup/mutation work, not the distribution work._
 
 ## Post-upgrade cleanup
 
@@ -147,18 +147,26 @@ Precedence (highest first):
 | **mise**       | `mise install node@<v>`      | `mise uninstall node@<v>`   | `mise current node`                 | `SetDefault` writes to `~/.config/mise/config.toml` via `mise use --global`. |
 | **n**          | `n install <v>`              | `n uninstall <v>`        | `n current` (n ≥ 8)                  | `SetDefault` is a no-op (n auto-uses the latest install). |
 | **nodenv**     | `nodenv install <v>`         | `nodenv uninstall <v>`   | `nodenv version` (treats `system` as "unknown") | SetDefault writes to `~/.nodenv/version`. |
-| **nvm-windows**| **unsupported**              | **unsupported**          | returns `ErrNVMWindowsNotImplemented` | `nvm-windows` doesn't expose a CLI for install/uninstall — the upgrade command leaves the install list alone and prints a clear note. |
+| **nvm-windows**| **unsupported**              | **unsupported**          | returns `ErrNVMWindowsNotImplemented` | `nvm-windows` doesn't expose a CLI for install/uninstall — `Install`/`Uninstall`/`Use`/`SetDefault`/`GlobalNpmPrefix` all return `ErrNVMWindowsNotImplemented`; the upgrade command leaves the install list alone, and the cleanup prompt runs but each per-version attempt surfaces that sentinel. |
 
-For nvm-windows, the upgrade proceeds normally but the cleanup
-prompt is suppressed with a note: "nvm-windows cleanup is not yet
-implemented — leave the old versions in place or remove them
-manually via `nvm uninstall <v>` from an elevated shell."
+For nvm-windows, the cleanup prompt **still runs** — it just
+operates against a manager whose `Uninstall()` returns
+`ErrNVMWindowsNotImplemented` for every candidate. Each
+per-version `Uninstall()` call surfaces that sentinel via the
+generic `"Failed to delete %s: %v"` line, so the user sees one
+failure per version and can remove them manually via `nvm
+uninstall <v>` from an elevated shell. Because `Current()` also
+returns the sentinel, the `ForcePerVersion` downgrade (see #58)
+kicks in — even `--cleanup` / `--yes` / `cleanup.auto: true` will
+prompt y/N for each candidate instead of mass-deleting.
 
 ### Failure modes
 
-- **Manager not on PATH** — the cleanup step is skipped entirely;
-  the upgrade itself still completes (Install/SetDefault will
-  have already failed loudly if the manager wasn't there).
+- **Manager not on PATH** — `detector.ResolveManager` returns
+  `ErrNoManager`, and the entire upgrade command aborts before
+  reaching install/migrate/cleanup. There's no "cleanup-only
+  skipped" path; if the upgrade returns, the cleanup either
+  ran or was opted out of via `--no-cleanup`.
 - **Uninstall fails** (permission denied, currently-active
   version, locked file, ...) — we record the failure and continue
   with the next candidate. The summary at the end lists both
