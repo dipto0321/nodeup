@@ -692,6 +692,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cleanup + mutation have shipped while distribution
   packaging (#17 / #18) is the remaining Phase 7 work.
   Closes #60.
+- Bundled cleanup-feature debris from PR #56 / issue #41:
+  `internal/detector/fnm.go`'s `GlobalNpmPrefix` final error path
+  now wraps the underlying `os.Stat` error with `%w` (matching
+  every sibling manager's behavior — asdf, mise, n, nodenv, nvm,
+  volta); previously the `err2` was discarded. Adds three
+  `internal/detector/nvm_test.go` tests pinning `NVM.Current()`:
+  `TestNVMCurrent_InvokesShell` (sources nvm.sh + runs `nvm
+  current` + parses the output), `TestNVMCurrent_PropagatesShellError`
+  (`runScript` failure surfaces with `%w`), and
+  `TestNVMCurrent_SystemIsError` (`nvm current` printing "system"
+  surfaces an error end-to-end, not just at the parse layer).
+  `Current()` was the safety-critical gate protecting the active
+  version from cleanup deletion, and was the only `Current()`
+  method in the package without a test at the method layer. The
+  dead `confirm := true` / `_ = confirm` lines in `cleanup.go`
+  and the `_ = yes` line in `upgrade.go` flagged in #61 had
+  already been removed by #76 / PR #95. Closes #61.
 
 ## [0.0.0] - 2024-07-01
 

@@ -589,6 +589,68 @@ func TestParseNVMCurrent_Empty(t *testing.T) {
 	}
 }
 
+// --- NVM.Current --------------------------------------------------------
+
+// TestNVMCurrent_InvokesShell pins the production behavior that
+// Current() (a) sources nvm.sh, (b) runs `nvm current`, and (c) parses
+// the result through parseNVMCurrent. Sister to TestFNMCurrent_
+// InvokesShell / TestASDFCurrent_InvokesShell / etc. — every other
+// manager's Current() has one of these, so the absence here is a
+// real coverage gap given Current() is the safety-critical gate
+// protecting the active version from deletion in cleanup.go.
+func TestNVMCurrent_InvokesShell(t *testing.T) {
+	withStubNVMScript(t)
+	rec := withStubScript(t, "v22.11.0\n", nil)
+
+	got, err := NewNVM().Current()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.String() != "22.11.0" {
+		t.Errorf("got %q, want %q", got.String(), "22.11.0")
+	}
+	if !strings.Contains(rec.script, "source ") {
+		t.Errorf("script missing source: %q", rec.script)
+	}
+	if !strings.Contains(rec.script, "nvm current") {
+		t.Errorf("script missing `nvm current`: %q", rec.script)
+	}
+}
+
+// TestNVMCurrent_PropagatesShellError pins the wrapped-error contract
+// for Current(): a `runScript` failure must surface with `%w` so the
+// cleanup-prompt's `errors.Is(err, ...)` checks (and any future
+// `errors.As` debugging) can introspect it. Sister to the equivalent
+// test on fnm / asdf / mise / nodenv / volta.
+func TestNVMCurrent_PropagatesShellError(t *testing.T) {
+	withStubNVMScript(t)
+	withStubScript(t, "", errSentinelForTest)
+
+	_, err := NewNVM().Current()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, errSentinelForTest) {
+		t.Errorf("error %v should wrap %v", err, errSentinelForTest)
+	}
+}
+
+// TestNVMCurrent_SystemIsError verifies the parseNVMCurrent branch
+// is exercised end-to-end: when nvm prints "system" (no nvm-managed
+// version is active), Current() must surface an error so the cleanup
+// prompt doesn't try to exclude "system" from the candidates set.
+// This complements TestParseNVMCurrent_SystemIsError (which only
+// exercises the pure parser).
+func TestNVMCurrent_SystemIsError(t *testing.T) {
+	withStubNVMScript(t)
+	withStubScript(t, "system\n", nil)
+
+	_, err := NewNVM().Current()
+	if err == nil {
+		t.Error("expected error when `nvm current` returns 'system'")
+	}
+}
+
 // --- helpers ------------------------------------------------------------
 
 // errSentinelForTest is the error returned by stubs to verify error
