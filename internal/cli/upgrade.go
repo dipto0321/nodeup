@@ -115,9 +115,17 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// replay-by-sentinel bookkeeping is wrapped in a sentinel lifecycle.
 	// We use a flag (rather than os.Exit) so deferred cleanup runs even
 	// on error paths.
+	//
+	// restoreSucceeded tracks whether the post-install package restore
+	// step actually succeeded; the deferred cleanup only removes the
+	// sentinel when that's true. A failed restore must leave the sentinel
+	// on disk so a follow-up `nodeup packages restore --from <path>`
+	// (the command printed by PersistentPreRunE's hint) can still find
+	// the resume breadcrumb. See issue #46.
 	sentinelArmed := false
+	restoreSucceeded := false
 	defer func() {
-		if sentinelArmed {
+		if sentinelArmed && restoreSucceeded {
 			if err := packages.RemoveSentinel(); err != nil {
 				cmd.Printf("Warning: failed to remove upgrade sentinel: %v\n", err)
 			}
@@ -325,6 +333,8 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			cmd.Printf("Warning: no snapshot path available to restore from; skipping package migration\n")
 		} else if err := packages.RestoreFromSnapshot(cmd.Context(), restoreSnapshotPath); err != nil {
 			cmd.Printf("Warning: restore failed: %v\n", err)
+		} else {
+			restoreSucceeded = true
 		}
 	}
 
