@@ -123,6 +123,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `chore(ci): replace issue-workflow.sh shell script with an AI skill`
   for the full rationale.
 
+### Fixed
+- `internal/cli`: upgrade loop's restore step was looking up its
+  snapshot by the **new** installed Node version
+  (`packages.Restore(ctx, mgr, *v)` where `v` came from `toInstall`),
+  but the upgrade flow only writes snapshots for the **previously**
+  installed versions. The restore then read a non-existent
+  `<DataDir>/snapshots/<mgr>-<newVersion>.json`, hit
+  `read snapshot: open …: no such file or directory`, and the loop's
+  blanket `cmd.Printf("Warning: restore failed: …")` swallowed the
+  error — silently no-op'ing the package migration for every newly
+  installed Node. The restore step now resolves the snapshot path the
+  same way the sentinel does (latest-installed-version key) and
+  replays via `packages.RestoreFromSnapshot(ctx, snapshotPath)`,
+  carrying the user's globals forward to the new default exactly
+  once. Added a regression test pinning the
+  `RestoreFromSnapshot`-reads-source-path contract. Closes #42.
+
 ## [0.0.0] - 2024-07-01
 
 ### Added
