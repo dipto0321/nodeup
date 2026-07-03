@@ -222,7 +222,7 @@ func TestSaveToCache_NoTempFileLeakOnSuccess(t *testing.T) {
 // withManifestServer swaps manifestURL to point at a httptest server
 // for the duration of the test, restoring the original on cleanup.
 // This is the seam fetchManifestOnce calls into via httpClient.Do,
-// so a redirect to a test server isolates our behaviour from the real
+// so a redirect to a test server isolates our behavior from the real
 // network (and from timeouts on slow CI runners).
 func withManifestServer(t *testing.T, handler http.Handler) *httptest.Server {
 	t.Helper()
@@ -342,19 +342,17 @@ func TestFetchManifestCtx_Permanent4xxReturnsFast(t *testing.T) {
 
 // TestFetchManifestCtx_ContextCancelMidFlight cancels the context
 // while the server is sleeping. The fetch must return promptly with a
-// context-cancelled error and NOT retry (the cancel raced past the
+// context-canceled error and NOT retry (the cancel raced past the
 // retry gate). This is the regression test for the "Ctrl-C during
 // nodeup upgrade hangs forever" failure mode.
 func TestFetchManifestCtx_ContextCancelMidFlight(t *testing.T) {
 	withEmptyCache(t)
 	srv := withManifestServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Block until the client disconnects. We select on the request
-		// context — when the client cancels, the connection is dropped
-		// and r.Context() fires.
-		select {
-		case <-r.Context().Done():
-			return
-		}
+		// Block until the client disconnects. When the client cancels,
+		// the connection is dropped and r.Context() fires — we just
+		// wait on the channel directly. (gosimple flags single-case
+		// select as S1000; the direct receive is clearer anyway.)
+		<-r.Context().Done()
 	}))
 	defer srv.Close()
 

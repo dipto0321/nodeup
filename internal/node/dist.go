@@ -142,13 +142,13 @@ func LoadCached() (Manifest, error) {
 var manifestURL = "https://nodejs.org/dist/index.json"
 
 // maxFetchAttempts bounds the retry loop. We retry transient failures
-// (5xx, network errors, ctx-not-yet-cancelled) up to this many times;
+// (5xx, network errors, ctx-not-yet-canceled) up to this many times;
 // beyond it the surface error is fatal.
 const maxFetchAttempts = 3
 
 // fetchAndCacheFresh downloads, parses, and caches the manifest.
 //
-// Retry behaviour: a transient failure (network error, 5xx response)
+// Retry behavior: a transient failure (network error, 5xx response)
 // triggers up to `maxFetchAttempts` total attempts with exponential
 // backoff (200ms, 400ms, ... capped at 2s). Permanent errors (4xx
 // other than 408/429) are returned on the first attempt without
@@ -227,7 +227,7 @@ func fetchManifestWithRetry(ctx context.Context) ([]byte, error) {
 // `*fetchError` so the retry loop can distinguish retryable from
 // permanent.
 func fetchManifestOnce(ctx context.Context) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, manifestURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, manifestURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("build manifest request: %w", err)
 	}
