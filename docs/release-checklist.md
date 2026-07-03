@@ -73,11 +73,11 @@ cd ..
 
 **Required once, not per release:**
 
-- An `npmjs.com` account with publish rights on the `nodeup-cli`
+- An `npmjs.com` account with publish rights on the `nodeupx`
   package name. The bare `nodeup` name is owned by an unrelated
   2015 package (`romanmt/nodeup`, "a simple cluster implementation
-  for node") so we ship under `nodeup-cli`. `npm publish` will fail
-  with `You do not have permission to publish "nodeup-cli"` if the
+  for node") so we ship under `nodeupx`. `npm publish` will fail
+  with `You do not have permission to publish "nodeupx"` if the
   name isn't claimed yet on your account.
 - **2FA enabled** on the npm account, with an authenticator-app
   factor (TOTP). Configure under
@@ -97,11 +97,11 @@ offers two options — pick one before wiring up `release.yml`:
 **Option A — OIDC Trusted Publishing (recommended).** GitHub
 Actions can publish without a long-lived secret. The runner
 exchanges its built-in OIDC token for a one-hour publish token
-scoped to the `nodeup-cli` package. Per-package config lives in
+scoped to the `nodeupx` package. Per-package config lives in
 npm's "Trusted Publisher" UI.
 
 1. After the first manual `npm publish` succeeds, open
-   <https://www.npmjs.com/package/nodeup-cli/access> (or the
+   <https://www.npmjs.com/package/nodeupx/access> (or the
    "Trust" tab on the package page) and add a trusted publisher:
    - Provider: **GitHub Actions**
    - Repository: `dipto0321/nodeup`
@@ -131,10 +131,10 @@ Actions entirely, or if you're publishing from a non-GitHub CI.
    <https://www.npmjs.com/settings/<your-username>/tokens> and
    click **Generate New Token**.
 2. Fill in:
-   - **Name / description**: e.g. `nodeup-cli-ci-publish`
+   - **Name / description**: e.g. `nodeupx-ci-publish`
    - **Expiration**: 30 days (granular tokens max out at 90 days;
      rotate before expiry)
-   - **Packages and scopes**: select `nodeup-cli` only (not `*`,
+   - **Packages and scopes**: select `nodeupx` only (not `*`,
      not unscoped — limit the blast radius)
    - **Permissions**: `Read and write` on packages
    - **Bypass 2FA**: ON (so the CI publish doesn't need an OTP)

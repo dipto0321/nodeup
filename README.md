@@ -77,7 +77,7 @@ spell out exactly what to run.
 |---|---|---|
 | Already use Homebrew for dev tooling on macOS / Linux | **Homebrew** | One command, auto-updates with `brew upgrade`, lives outside any Node install, uninstalls cleanly with `brew uninstall`. |
 | Already use Scoop on Windows | **Scoop** | Same shape as Homebrew on the Windows side — `scoop update nodeup` keeps it current, no admin shell needed. |
-| Already manage dev tools via `npm install -g` and want a one-liner | **npm wrapper** (`nodeup-cli`) | No new package manager to set up; the install travels with the Node version it's installed against. Slight catch: a `nodeup` upgrade ships when the wrapper version bumps. The npm name is `nodeup-cli` because `nodeup` is taken. |
+| Already manage dev tools via `npm install -g` and want a one-liner | **npm wrapper** (`nodeupx`) | No new package manager to set up; the install travels with the Node version it's installed against. Slight catch: a `nodeup` upgrade ships when the wrapper version bumps. The npm name is `nodeupx` because `nodeup` is taken. |
 | Are blocked from system package installs but can `npm i -g` | **npm wrapper** | Sandboxed / corp-locked-down machines often allow npm globals where they block system installers. |
 | Maintain `nodeup` itself, or want a version pinned to a specific tag without any postinstall network step | **Direct binary download** | You choose the exact release; no installer, no auto-update, no Node coupling. Best for reproducible CI installs. |
 | Are a Go developer hacking on `nodeup` and want the latest commit | **`go install`** | Pulls the current source and builds it locally. Fastest iteration loop for contributors. |
@@ -107,10 +107,10 @@ auto-managed by GoReleaser from `scoop: {}` in `.goreleaser.yaml`.
 #### npm wrapper (any platform with Node ≥ 14)
 
 ```bash
-npm install -g nodeup-cli
+npm install -g nodeupx
 ```
 
-The wrapper is published as **`nodeup-cli`**, not `nodeup`, because
+The wrapper is published as **`nodeupx`**, not `nodeup`, because
 the bare `nodeup` name on npmjs.com is owned by an unrelated,
 dormant 2015 package (`romanmt/nodeup` — "a simple cluster
 implementation for node"). The downloaded binary still installs

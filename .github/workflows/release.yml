@@ -11,9 +11,9 @@
 #        - Creates a GitHub Release with an auto-generated changelog
 #        - Pushes to the homebrew-tap repo (if HOMEBREW_TAP_TOKEN is set)
 #        - Pushes to the scoop-bucket repo (if SCOOP_BUCKET_TOKEN is set)
-#   4. Publish the nodeup-cli npm wrapper via OIDC Trusted Publishing.
+#   4. Publish the nodeupx npm wrapper via OIDC Trusted Publishing.
 #      GitHub Actions exchanges its built-in OIDC token for a one-hour
-#      publish token scoped to the `nodeup-cli` package. No NPM_TOKEN
+#      publish token scoped to the `nodeupx` package. No NPM_TOKEN
 #      secret, no rotation, no leak surface.
 #
 # Required secrets (configured per-repo):
@@ -25,7 +25,7 @@
 #
 # npm publish uses OIDC Trusted Publishing — no secret required. The
 # trust is registered on the npmjs.com side at
-#   https://www.npmjs.com/package/nodeup-cli/access
+#   https://www.npmjs.com/package/nodeupx/access
 # under "Trusted Publisher", pointing at this workflow by filename
 # (release.yml). If the publish job ever fails with ENEEDAUTH, the
 # first thing to check is that the trust entry on npmjs.com still
@@ -84,15 +84,15 @@ jobs:
           SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
 
   publish-npm:
-    name: Publish nodeup-cli to npm (OIDC)
+    name: Publish nodeupx to npm (OIDC)
     runs-on: ubuntu-latest
     needs: goreleaser
     # OIDC Trusted Publishing — the trust is registered on the npmjs.com
-    # side at https://www.npmjs.com/package/nodeup-cli/access under
+    # side at https://www.npmjs.com/package/nodeupx/access under
     # "Trusted Publisher", pointing at this workflow by filename. No
     # NPM_TOKEN secret is needed; the runner mints an OIDC token,
     # npmjs.com exchanges it for a one-hour publish token scoped to
-    # the nodeup-cli package.
+    # the nodeupx package.
     #
     # IMPORTANT: OIDC only kicks in when npm sees NO `_authToken` line
     # in .npmrc for the target registry. The actions/setup-node action
@@ -130,7 +130,7 @@ jobs:
           mkdir -p ~/.npm
           printf 'registry=https://registry.npmjs.org/\n' > ~/.npmrc
 
-      - name: Publish nodeup-cli
+      - name: Publish nodeupx
         working-directory: ./nodeup-npm
         # --provenance attaches a SLSA-style attestation to the
         # published package, generated from this OIDC token.
