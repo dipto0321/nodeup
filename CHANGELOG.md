@@ -177,6 +177,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`<DataDir>/nodeup.lock` per OS — Linux XDG, macOS
   `~/Library/Application Support/nodeup/nodeup.lock`, Windows
   `%APPDATA%\nodeup\nodeup.lock`). Closes #44.
+- `nodeup list` was a stub that printed "not yet implemented (Phase
+  1)". It now does the obvious thing — resolve every detected
+  manager, call each one's `ListInstalled()`, and render the union
+  either as a JSON envelope (`--json`) or a one-line-per-manager
+  table. Versions are sorted ascending per manager (semver, so
+  pre-release tags order correctly); the currently active version
+  (first manager that answers `Current()`) is surfaced alongside
+  the listing in the JSON envelope and as a trailing line in the
+  table. The new `--manager` flag narrows the listing to a single
+  manager (case-insensitive), matching the `--manager` flag on
+  `nodeup upgrade` and `nodeup check`. Errors from a single
+  manager's `ListInstalled` are captured in the JSON envelope's
+  per-entry `error` field rather than aborting the whole listing,
+  mirroring the soft-fail policy of `nodeup check`. Adds a
+  dedicated `internal/cli/list_test.go` covering the JSON envelope
+  (omits-on-nil current/error), the table renderer (empty state,
+  mixed empty/error/success), and the `--manager` resolution
+  helper. Closes #45.
 
 ## [0.0.0] - 2024-07-01
 
