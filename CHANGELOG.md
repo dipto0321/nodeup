@@ -486,6 +486,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     1. No JS test framework is introduced (the project already
     has a 1-line `require('tar')` check that didn't justify
     pulling in jest/mocha/vitest either; see #63). Closes #64.
+- `nodeup-npm/scripts/check.js`: replace the per-axis platform /
+  arch lookup with a single combined-key `Set` of (Node.js
+  `process.platform` / `process.arch`) pairs that mirrors the
+  GoReleaser build matrix. Pre-fix, the script checked
+  `PLATFORM_TO_OS[platform]` and `ARCH_TO_GOARCH[arch]`
+  independently — so `process.platform === 'win32'` plus
+  `process.arch === 'arm64'` mapped to `(windows, arm64)` and
+  both lookup tables returned non-null, the preinstall check
+  passed, and `install.js` then 404'd trying to download a
+  release archive that was never built (`.goreleaser.yaml`
+  line 45-47 explicitly excludes `goos: windows, goarch: arm64`
+  from the build matrix). The new lookup is one map keyed on
+  the actual (platform, arch) pair: `linux/{amd64,arm64}`,
+  `darwin/{amd64,arm64}`, `win32/amd64`. `win32/arm64` is
+  intentionally absent so the preinstall check matches the
+  release artifact set 1:1. Tests in `check_test.js` pin the
+  SUPPORTED set contents and pin the rejection of the
+  previously-buggy `win32/arm64` (and the partial-match /
+  sibling-prefix / trailing-slash variants that an env-tampering
+  user might try). Closes #65 (point 2).
+- `nodeup-npm/scripts/install.js`: belt-and-suspenders zip-slip
+  / tar-slip guards on archive extraction, plus a partial-state
+  cleanup at the start of the install. Pre-fix, the install
+  path trusted whatever entries the tar / zip extractor wrote —
+  the `tar.x()` call has no `filter` argument, and the
+  Windows-zip path shells out to `Expand-Archive` / `unzip -o`,
+  neither of which validates that extracted entry paths stay
+  inside the temp dir. The actual attack surface is bounded by
+  the SHA256 verification added in #64 (a hostile archive would
+  have to defeat that first), but a defensive check costs
+  nothing and removes the dependency entirely:
+  - `isPathInside(parent, child)` resolves both paths via
+    `path.resolve` (sibling-prefix-safe — `/tmp/ab` is NOT
+    inside `/tmp/a`) and uses `path.relative` to detect
+    `..` traversal and absolute-path escapes.
+  - `extractTarGz` now passes a `filter` callback that runs
+    `isPathInside(outDir, entryPath)` for every entry and
+    throws with the offending entry + resolved path if it
+    escapes. tar 6.x already refuses `..`-containing entries
+    by default (`node_modules/tar/lib/unpack.js:277-286`), so
+    this is defense in depth — if a future regression flips
+    the tar option, the install still refuses.
+  - `extractZip` now goes through `safeExtractZip`, which
+    lists the archive's entries first (`unzip -Z1` on POSIX,
+    `[System.IO.Compression.ZipFile]::OpenRead(...).Entries`
+    on Windows), validates each entry's resolved path against
+    `outDir`, and only then runs the actual extraction. This
+    is the real fix: `unzip -o` and `Expand-Archive` will
+    both happily extract a `../escape.txt` if the archive
+    contains one. tar doesn't have this problem; only the
+    zip path does.
+  - `main()` now `fs.rmSync(binaryDest, { force: true })` at
+    the start of the install, before any download. Pre-fix,
+    a late-stage failure (chmod throwing after renameSync
+    succeeded, an OOM mid-extraction) left a non-executable
+    `bin/nodeup` on disk; a retry's `renameSync` then either
+    errored with EEXIST or silently overwrote a half-broken
+    file. Cleaning up at the start makes the install path
+    effectively transactional.
+  - Tests in `install_test.js` cover `isPathInside` (inside /
+    equals / parent / sibling-prefix / `..` traversal /
+    absolute-outside / trailing-slash-normalisation) and the
+    end-to-end filter callback (the good entry passes, the
+    slip entry throws, the absolute-outside entry throws).
+    No JS test framework introduced; same reasoning as #63.
+    Closes #65 (points 1 and 3).
 
 ## [0.0.0] - 2024-07-01
 

@@ -267,20 +267,119 @@ async function fetchExpectedHash(repo, tag, archiveName) {
 
 // ---- extraction ----------------------------------------------------------
 
+// isPathInside answers: does `child` resolve to a path strictly
+// inside `parent` (or equal to it)? Used by the extraction path
+// to confirm that no archive entry can escape the temp directory.
+//
+// tar 6.x already strips leading `/` from absolute paths and refuses
+// to extract entries whose path contains `..` (see
+// node_modules/tar/lib/unpack.js:277-286 — `if (parts.includes('..'))
+// this.warn(...); return false`). We pass that on as a `filter`
+// here for defense in depth: if a future regression flips the tar
+// option, the install still refuses to write outside `outDir`.
+//
+// On the zip side there is no equivalent — `unzip -o` and PowerShell
+// `Expand-Archive` will happily write a `../escape.txt` entry to
+// the cwd's parent. We work around that by listing the archive's
+// entries first, validating each against `outDir`, and only then
+// invoking the actual extraction. See safeExtractZip().
+function isPathInside(parent, child) {
+  // Resolve both to absolute, normalized paths so a Windows
+  // `C:\foo\bar` ↔ `c:/foo/bar/..` doesn't fool us, and so a
+  // sibling-prefix attack (`/foo/barbaz` ≠ `/foo/bar`) is caught.
+  const resolvedParent = path.resolve(parent);
+  const resolvedChild = path.resolve(child);
+  if (resolvedChild === resolvedParent) return true;
+  const rel = path.relative(resolvedParent, resolvedChild);
+  // path.relative returns a path that starts with '..' if `child`
+  // is outside `parent`, or an absolute path (different platform's
+  // root) if it's on a different drive. Either way, not inside.
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
 function extractTarGz(archivePath, outDir) {
+  // Pre-resolve outDir for the filter callback (tar invokes the
+  // filter once per entry, with the entry's path relative to cwd
+  // unless `absolute` is set).
+  const resolvedOutDir = path.resolve(outDir);
   return tar.x({
     file: archivePath,
     cwd: outDir,
     strip: 0, // GoReleaser archives don't have a top-level wrapper dir
+    // Defense-in-depth zip-slip guard. tar 6.x already refuses
+    // `..`-containing entries by default (lib/unpack.js:277-286);
+    // this filter is a belt-and-suspenders backup and also gives
+    // us a JS-throw with a clear error message instead of a
+    // tar-side warning that the user might miss in the install
+    // log. See #65.
+    filter: (entryPath) => {
+      const absolute = path.isAbsolute(entryPath)
+        ? entryPath
+        : path.join(resolvedOutDir, entryPath);
+      if (!isPathInside(resolvedOutDir, absolute)) {
+        throw new Error(
+          `refusing to extract tar entry "${entryPath}": ` +
+            `resolved path ${path.resolve(absolute)} escapes ${resolvedOutDir}`
+        );
+      }
+      return true;
+    },
   });
 }
 
-function extractZip(archivePath, outDir) {
-  // No native zip support in Node — shell out to `unzip`. Available
-  // by default on Windows 10+ (PowerShell Expand-Archive) and via the
-  // `unzip` package on most POSIX distros. If neither is present the
-  // user gets a clear error from the spawned process.
+// safeExtractZip validates every entry's path against `outDir`
+// before letting the extractor touch the filesystem. We list the
+// archive first (`unzip -Z1` / .NET ZipFile.OpenRead), validate
+// each basename in JS, then run the actual extraction.
+//
+// This is the zip-slip mitigation for the Windows zip path. tar
+// 6.x refuses `..`-containing entries by default; the zip side
+// has no equivalent, and `Expand-Archive` / `unzip` will both
+// happily extract a `../escape.txt` if the archive contains one.
+// A malicious archive that lies about its listing and smuggles
+// a different body for the same entry is caught by the SHA256
+// verification on the archive itself (#64).
+// See #65.
+function safeExtractZip(archivePath, outDir) {
+  const resolvedOutDir = path.resolve(outDir);
   const isWindows = process.platform === 'win32';
+  let listing;
+  if (isWindows) {
+    const out = execFileSync(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `Add-Type -AssemblyName System.IO.Compression.FileSystem; ` +
+          `[System.IO.Compression.ZipFile]::OpenRead('${archivePath.replace(/'/g, "''")}').Entries.FullName`,
+      ],
+      { stdio: ['ignore', 'pipe', 'inherit'] }
+    );
+    listing = out.toString('utf8').split(/\r?\n/).filter(Boolean);
+  } else {
+    const out = execFileSync('unzip', ['-Z1', archivePath], {
+      stdio: ['ignore', 'pipe', 'inherit'],
+    });
+    listing = out.toString('utf8').split('\n').filter(Boolean);
+  }
+  for (const entry of listing) {
+    // `unzip -Z1` (and .NET ZipFile) return forward-slash paths
+    // regardless of host. Normalize to the host separator before
+    // resolving.
+    const hostSepEntry = entry.split('/').join(path.sep);
+    const absolute = path.isAbsolute(hostSepEntry)
+      ? hostSepEntry
+      : path.join(resolvedOutDir, hostSepEntry);
+    if (!isPathInside(resolvedOutDir, absolute)) {
+      throw new Error(
+        `refusing to extract zip entry "${entry}": ` +
+          `resolved path ${path.resolve(absolute)} escapes ${resolvedOutDir}`
+      );
+    }
+  }
+
+  // All entries validated — safe to extract.
   if (isWindows) {
     execFileSync(
       'powershell.exe',
@@ -295,6 +394,16 @@ function extractZip(archivePath, outDir) {
   } else {
     execFileSync('unzip', ['-o', archivePath, '-d', outDir], { stdio: 'inherit' });
   }
+}
+
+function extractZip(archivePath, outDir) {
+  // No native zip support in Node — shell out to `unzip` /
+  // PowerShell `Expand-Archive`. Available by default on
+  // Windows 10+ (`Expand-Archive` is in the base image) and via
+  // the `unzip` package on most POSIX distros. The actual
+  // extraction runs through `safeExtractZip` (above) so that
+  // zip-slip entries are rejected before any byte is written.
+  safeExtractZip(archivePath, outDir);
 }
 
 function chmodExec(filePath) {
@@ -320,6 +429,20 @@ function chmodExec(filePath) {
   const binaryDest = path.join(binDir, process.platform === 'win32' ? 'nodeup.exe' : 'nodeup');
 
   fs.mkdirSync(binDir, { recursive: true });
+
+  // Wipe any prior install before starting. Pre-fix, a late-stage
+  // failure (chmod throwing after renameSync succeeded, an OOM
+  // mid-extraction, etc.) would leave a non-executable `bin/nodeup`
+  // in place; a retry's `fs.renameSync` would then fail with
+  // `EEXIST` or overwrite a half-broken file, and the user got
+  // cryptic errors instead of a clean install. Cleaning up here
+  // makes the install path effectively transactional. See #65.
+  try {
+    fs.rmSync(binaryDest, { force: true });
+  } catch (_) {
+    // best-effort: if the file isn't there or we lack perms, the
+    // renameSync further down will surface a clearer error.
+  }
 
   try {
     // Download the expected hash FIRST — fail fast if the release
