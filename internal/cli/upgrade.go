@@ -322,11 +322,26 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// active version (if we can detect it).
 	if !cleanupCfg.NonInteractive {
 		// Best-effort detection of the currently-active version.
-		// A failure here is non-fatal: we just skip the exclusion
-		// rather than aborting a successful upgrade.
+		// A failure here is NOT just "skip the exclusion" — without
+		// knowing the active version, every candidate becomes a
+		// potential mass-delete of the Node.js powering the user's
+		// shell. We fail closed: force per-version confirmation
+		// (overriding --cleanup / --yes / cfg.Cleanup.Auto) so
+		// nothing gets auto-deleted, and warn so the user knows
+		// why the prompt is now per-version. See #58.
 		var active semver.Version
+		var currentErr error
 		if cur, cerr := m.Current(); cerr == nil {
 			active = cur
+		} else {
+			currentErr = cerr
+			cleanupCfg.ForcePerVersion = true
+			// Surface the failure so the user knows why their
+			// --cleanup / --yes shortcut was overridden. Without
+			// this, a user running `--cleanup` would suddenly see
+			// per-version y/N prompts for the very first time and
+			// have no idea why. See #58.
+			cmd.Printf("Warning: could not determine the currently-active Node version (%v); cleanup will require per-version confirmation for safety.\n", currentErr)
 		}
 
 		// Build a values slice from the toInstall pointers so the

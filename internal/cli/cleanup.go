@@ -63,6 +63,15 @@ type cleanupConfig struct {
 	// When set, the all-or-nothing prompt is skipped and only
 	// these versions are offered for deletion.
 	Prefiltered []semver.Version
+
+	// ForcePerVersion, when true, downgrades any auto-confirm path
+	// (AutoDeleteAll or a PerVersion=false setting) to per-version
+	// confirmation. Sourced from a defensive upgrade-flow knob: if
+	// `Manager.Current()` failed to identify the active Node version,
+	// we can't safely exclude it from candidates, so we force the
+	// user to answer "y/N" per candidate instead of letting
+	// --cleanup / --yes / cfg.Cleanup.Auto mass-delete. See #58.
+	ForcePerVersion bool
 }
 
 // resolveCleanupConfig maps the post-upgrade cleanup toggles (CLI flags
@@ -155,6 +164,17 @@ func runCleanupPrompt(cfg cleanupConfig, toInstall, installed []semver.Version, 
 	// Step 1: Non-interactive skip.
 	if cfg.NonInteractive {
 		return result, nil
+	}
+
+	// Step 1b: ForcePerVersion downgrades any auto-confirm path. We
+	// apply this AFTER the NonInteractive check so --no-cleanup still
+	// wins (skipping cleanup entirely is the strongest fail-closed
+	// stance — but a Current() failure doesn't necessarily mean
+	// "don't cleanup at all"; it just means "be paranoid about which
+	// version is currently powering the user's shell"). See #58.
+	if cfg.ForcePerVersion {
+		cfg.AutoDeleteAll = false
+		cfg.PerVersion = true
 	}
 
 	// Step 2: Compute the candidates set: installed \ {new LTS,

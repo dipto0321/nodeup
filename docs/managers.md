@@ -96,9 +96,14 @@ A version is a **cleanup candidate** if all three are true:
 3. It's NOT the version that's currently active on your shell. We
    detect this via `<manager> current` (or `<manager> version`,
    `<manager> list --format=plain`, etc. — see per-manager table
-   below). If the manager doesn't expose a "current version" query,
-   the exclusion is skipped (better to over-prompt than to leave a
-   broken shell).
+   below). If `Current()` errors out (the manager exited non-zero,
+   or the output couldn't be parsed as a semver), the active-version
+   exclusion is skipped AND we **force per-version confirmation**
+   (downgrading `--cleanup` / `--yes` / `cleanup.auto: true` to
+   per-version y/N) — so even though the active Node version is no
+   longer excluded from the candidate set, it can't be auto-deleted
+   behind your back. Better to over-prompt than to silently take
+   down the version powering your shell. See issue #58.
 
 For example, if you had 18.20.4, 20.18.0, and 22.11.0 installed and
 upgraded to 22.11.0 (LTS) + 24.15.0 (Current), with 20.18.0 active,
@@ -113,7 +118,7 @@ active version are off-limits.
 | `--cleanup`              | Skip the prompt; auto-confirm deletion of every candidate       |
 | `--cleanup-version <v>`  | Skip the prompt; only delete the specified versions (repeatable; pairs with `--cleanup`) |
 | `--no-cleanup`           | Skip the prompt AND don't delete anything                       |
-| `--yes`                  | Implies `--cleanup` for non-interactive runs (e.g., CI)         |
+| `--yes`                  | Implies `--cleanup` for non-interactive runs (e.g., CI). Downgraded to per-version y/N if `Current()` fails — see #58. |
 
 Config equivalents (`~/.nodeup/config.yaml`):
 
