@@ -59,7 +59,17 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          # MUST match `go.mod`'s `go` directive (currently 1.24.0)
+          # AND `.github/workflows/ci.yml`'s lint job — the test
+          # jobs use `go-version-file: 'go.mod'` which auto-derives,
+          # so we have to keep this in sync by hand. With Go's
+          # default `GOTOOLCHAIN=auto`, a too-old pin here would
+          # "self-heal" via auto-download — masking the divergence
+          # from CI but silently depending on network access to
+          # proxy.golang.org at release time, and breaking outright
+          # if `GOTOOLCHAIN=local` is ever set (org policy, air-
+          # gapped runner). See #66.
+          go-version: '1.24'
           cache: true
 
       - name: Run GoReleaser

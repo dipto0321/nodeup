@@ -552,6 +552,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     slip entry throws, the absolute-outside entry throws).
     No JS test framework introduced; same reasoning as #63.
     Closes #65 (points 1 and 3).
+- `.github/workflows/release.yml`: bump the GoReleaser job's
+  `go-version` pin from `'1.22'` to `'1.24'` to match
+  `go.mod`'s `go 1.24.0` directive and `.github/workflows/ci.yml`'s
+  lint job (the test jobs in ci.yml use `go-version-file: 'go.mod'`
+  which auto-derives, so we have to keep the explicit pin here in
+  sync by hand). Pre-fix, the comment at release.yml:6 claiming
+  "same version pin as CI" was misleading — the divergence was
+  masked by Go's default `GOTOOLCHAIN=auto` (which auto-downloads
+  the missing toolchain), but that meant the release build
+  silently depended on network access to proxy.golang.org during
+  the release job — a step CI never exercises, since CI already
+  has 1.24. If `GOTOOLCHAIN=local` is ever set (org policy,
+  air-gapped runner), the release build would break outright at
+  tag-push time, the one moment there's no opportunity to catch
+  it in a normal PR-gated CI run. A multi-line inline comment
+  next to the pin explains the parity-with-go.mod invariant so
+  future bumps in either direction are caught in code review.
+  Closes #66.
 
 ## [0.0.0] - 2024-07-01
 
