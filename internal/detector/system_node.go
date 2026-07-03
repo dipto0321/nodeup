@@ -412,7 +412,17 @@ func managerManagedRoots(m Manager) (roots []string, ok bool) {
 		}
 		return []string{}, true
 	case "asdf":
-		if d := strings.TrimSpace(getenv("ASDF_DIR")); d != "" {
+		// $ASDF_DATA_DIR is the canonical override (matches
+		// asdfDataDir()'s view of the same variable, which is what
+		// the detector's Install/ListInstalled actually shell out
+		// against). $ASDF_DIR is a separate variable pointing at
+		// the asdf source checkout — not a data dir, not where
+		// versions live — and using it here would let the
+		// classifier claim a node binary under
+		// `/path/to/asdf-source/shims/node` is manager-managed when
+		// the manager's actual data dir is somewhere else entirely.
+		// See issue #50.
+		if d := strings.TrimSpace(getenv("ASDF_DATA_DIR")); d != "" {
 			return []string{d}, true
 		}
 		if h, err := userHomeDir(); err == nil {

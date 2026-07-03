@@ -14,7 +14,7 @@ priority order — earlier managers win when multiple are installed.
 | [fnm](https://github.com/Schniz/fnm) | macOS, Linux, Windows | `fnm` on PATH, `FNM_DIR`, `~/Library/Application Support/fnm` (macOS) / `~/.local/share/fnm` (Linux) / `%AppData%\fnm` (Windows) |
 | [nvm](https://github.com/nvm-sh/nvm) | macOS, Linux | `NVM_DIR`, `~/.nvm/nvm.sh` |
 | [Volta](https://volta.sh) | macOS, Linux, Windows | `volta` on PATH, `VOLTA_HOME`, `~/.volta` |
-| [asdf](https://asdf-vm.com) | macOS, Linux | `asdf` on PATH, `ASDF_DIR`, `~/.asdf`, `nodejs` plugin |
+| [asdf](https://asdf-vm.com) | macOS, Linux | `asdf` on PATH, `ASDF_DATA_DIR`, `~/.asdf`, `nodejs` plugin |
 | [mise](https://mise.jdx.dev) | macOS, Linux | `mise` on PATH, `node` plugin |
 | [n](https://github.com/tj/n) | macOS, Linux | `n` on PATH, `N_PREFIX` |
 | [nodenv](https://github.com/nodenv/nodenv) | macOS, Linux | `nodenv` on PATH, `~/.nodenv/shims` |

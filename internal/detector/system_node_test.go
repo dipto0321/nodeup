@@ -305,7 +305,7 @@ func TestManagerManagedRoots(t *testing.T) {
 	// "fall back to home" assertions noisy. t.Setenv saves and
 	// restores each one to its pre-test value.
 	for _, v := range []string{
-		"FNM_DIR", "NVM_DIR", "VOLTA_HOME", "ASDF_DIR",
+		"FNM_DIR", "NVM_DIR", "VOLTA_HOME", "ASDF_DIR", "ASDF_DATA_DIR",
 		"MISE_DATA_DIR", "N_PREFIX", "NODENV_ROOT",
 		"XDG_DATA_HOME",
 	} {
@@ -366,10 +366,10 @@ func TestManagerManagedRoots(t *testing.T) {
 		},
 		{
 			name: "asdf env wins",
-			mgr:  "asdf", envKey: "ASDF_DIR", envVal: "/opt/asdf",
+			mgr:  "asdf", envKey: "ASDF_DATA_DIR", envVal: "/opt/asdf",
 			wantRoots:   []string{"/opt/asdf"},
 			wantOK:      true,
-			description: "ASDF_DIR override",
+			description: "ASDF_DATA_DIR override (canonical asdf data-dir env)",
 		},
 		{
 			name: "mise env wins",

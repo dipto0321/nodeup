@@ -251,6 +251,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   part of #48 — `packages.go` was the last `RunE` file in the tree
   still using `context.Background()`. The unused `"context"`
   import is dropped. Closes #49.
+- `internal/detector/system_node.go`: the asdf branch of
+  `managerManagedRoots` was reading `$ASDF_DIR` to discover the
+  manager's data dir, while `asdfDataDir()` (the function the
+  detector's actual `Install`/`ListInstalled` paths shell out
+  against) reads `$ASDF_DATA_DIR` — and `docs/managers.md`
+  documented `$ASDF_DIR` in the supported-manager table. The three
+  were inconsistent: a user with `ASDF_DIR=/path/to/asdf-source`
+  (the source checkout from git-clone) would have `nodeup` classify
+  the `node` binary under that source dir as `manager`-managed even
+  though the manager's actual install location was elsewhere
+  (typically `~/.asdf`), and a user with the canonical `ASDF_DATA_DIR`
+  override would have it silently ignored by the path classifier.
+  Unified all three on `$ASDF_DATA_DIR`, matching the variable
+  `asdfDataDir()` already used and the official asdf docs.
+  Updated `system_node_test.go`'s "asdf env wins" case to drive
+  the new variable. Closes #50.
 
 ## [0.0.0] - 2024-07-01
 
