@@ -10,12 +10,13 @@
 package cli
 
 import (
+	"context"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dipto0321/nodeup/internal/packages"
+	"github.com/dipto0321/nodeup/internal/ui"
 )
 
 // warnInterruptedUpgrade checks for an orphaned upgrade sentinel and
@@ -28,15 +29,15 @@ import (
 // "no sentinel" are deliberately swallowed: a corrupted sentinel file
 // is a cosmetic issue and should not prevent the user's actual command
 // from running.
-func warnInterruptedUpgrade(_ *cobra.Command, _ []string) {
+func warnInterruptedUpgrade(w ui.Writer) {
 	s, err := packages.OrphanedSentinel()
 	if err != nil || s == nil {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "Detected an interrupted upgrade (snapshot: %s, started: %s).\n",
-		s.SnapshotPath, s.StartedAt.Format("2006-01-02T15:04:05Z07:00"))
-	fmt.Fprintf(os.Stderr, "To resume: `nodeup packages restore --from %s`\n",
-		s.SnapshotPath)
+	w.Warn(fmt.Sprintf("Detected an interrupted upgrade (snapshot: %s, started: %s).",
+		s.SnapshotPath, s.StartedAt.Format("2006-01-02T15:04:05Z07:00")))
+	w.Warn(fmt.Sprintf("To resume: `nodeup packages restore --from %s`",
+		s.SnapshotPath))
 }
 
 // NewRootCmd builds the root `nodeup` command with all subcommands attached.
@@ -66,12 +67,26 @@ Common workflows:
 Docs: https://github.com/dipto0321/nodeup`,
 		SilenceUsage:  true, // don't dump --help on every error
 		SilenceErrors: true, // we print errors ourselves in main()
-		// PersistentPreRunE runs before every subcommand. The
-		// interrupted-upgrade warning must run for the root command too
-		// (e.g., bare `nodeup` shows help), so we also attach it as
-		// PersistentPreRun below — cobra calls both.
+		// PersistentPreRunE runs before every subcommand. Two jobs:
+		//   1. Resolve the ui.Writer for this invocation (single
+		//      DecideMode call, result cached on the cmd.Context()).
+		//   2. Fire the interrupted-upgrade warning.
+		// cobra's docs guarantee PersistentPreRunE runs for the root
+		// command too (e.g., bare `nodeup` showing help), so we get
+		// both behaviors for free without needing PersistentPreRun
+		// alongside.
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			warnInterruptedUpgrade(cmd, args)
+			noColor, _ := cmd.Flags().GetBool("no-color")
+			out := cmd.OutOrStdout()
+			errOut := cmd.ErrOrStderr()
+			if errOut == nil {
+				errOut = out
+			}
+			w := ui.NewWriter(ui.DecideMode(noColor), out, errOut)
+			ctx := context.WithValue(cmd.Context(), writerCtxKey{}, w)
+			cmd.SetContext(ctx)
+
+			warnInterruptedUpgrade(w)
 			return nil
 		},
 	}
