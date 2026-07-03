@@ -8,7 +8,10 @@
 // and runScript in nvm.go.
 package detector
 
-import "os"
+import (
+	"os"
+	"path/filepath"
+)
 
 // getenv is a package-level seam around os.Getenv used by
 // managerManagedRoots. Tests overwrite it to inject canned
@@ -25,3 +28,12 @@ var getenv = os.Getenv
 //
 // Signature matches os.UserHomeDir so a direct assignment works.
 var userHomeDir = os.UserHomeDir
+
+// evalSymlinks is a package-level seam around filepath.EvalSymlinks
+// used by ResolveSystemNode. Tests overwrite it to map canned PATH
+// entries to canned resolution targets without creating real symlinks
+// (which need elevated rights on Windows runners). Production code
+// never reassigns it.
+//
+// Signature matches filepath.EvalSymlinks so a direct assignment works.
+var evalSymlinks = filepath.EvalSymlinks
