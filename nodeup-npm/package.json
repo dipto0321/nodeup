@@ -33,6 +33,9 @@
     "postinstall": "node scripts/install.js",
     "preinstall": "node scripts/check.js"
   },
+  "dependencies": {
+    "tar": "^6.2.1"
+  },
   "files": [
     "scripts/install.js",
     "scripts/check.js",

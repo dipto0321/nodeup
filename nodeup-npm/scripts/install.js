@@ -32,8 +32,16 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const { execFileSync } = require('child_process');
-const zlib = require('zlib');
-const tar = require('tar'); // npm bundles tar; no extra dep
+// `tar` is an EXPLICIT runtime dependency declared in this package's
+// package.json `dependencies` block. The pre-fix comment
+// ("npm bundles tar; no extra dep") was incorrect: npm uses tar
+// internally, but it is not guaranteed to be reachable from an
+// installed package's script context — yarn/pnpm do not hoist
+// npm's internals, and npm's modern flat-install behavior is
+// incidental. Without the explicit dep, `require('tar')` fails
+// immediately at module load time on yarn/pnpm installs (and on
+// some npm versions) with `Cannot find module 'tar'`. See #63.
+const tar = require('tar');
 
 // ---- helpers --------------------------------------------------------------
 

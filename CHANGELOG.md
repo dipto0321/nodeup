@@ -146,6 +146,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for the full rationale.
 
 ### Fixed
+- `nodeup-npm/package.json`: declare `tar` as an explicit
+  runtime dependency. Pre-fix, `nodeup-npm/scripts/install.js`
+  did `const tar = require('tar')` at module load time with a
+  comment claiming "npm bundles tar; no extra dep" — that
+  comment was incorrect. npm uses tar internally, but it is
+  not guaranteed to be reachable from an installed package's
+  script context: yarn/pnpm do not hoist npm's internals, and
+  npm's modern flat-install behavior is incidental. Without
+  the explicit dep, `require('tar')` failed immediately on
+  every yarn / pnpm install with
+  `Error: Cannot find module 'tar'` mid-`postinstall`, on
+  every non-Windows platform. yarn/pnpm users were completely
+  locked out of the npm install path
+  (`docs/installation.md` lists yarn / pnpm alongside npm as
+  supported install methods). Pinned to `^6.2.1` to match the
+  package's `engines.node: ">=14"` floor (v7 requires Node 16+).
+  The misleading comment in install.js is replaced with an
+  explicit pointer to this issue + a note that the dependency
+  is now declared. Also dropped the unused `zlib` import the
+  pre-fix file carried (lint unused statics had not caught it
+  because it's not a Go file). The transitive `npm audit`
+  warning that surfaces against any unpinned `tar@^6.x` (re:
+  #65 / node-tar GHSA advisories) is deferred to issue #65 —
+  the v6→v7 bump also forces our `engines.node` floor up to
+  16, which is a separate decision. Closes #63.
 - `.golangci.yml` / `Makefile` / `.github/workflows/ci.yml`:
   migrated to the golangci-lint **v2** schema. The pre-fix file
   targeted the v1 schema (no `version:` field, flat
