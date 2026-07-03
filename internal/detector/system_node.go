@@ -151,6 +151,18 @@ func ResolveSystemNode(ctx context.Context, m Manager) (SystemNodeInfo, error) {
 		return SystemNodeInfo{}, ErrNoNodeOnPATH
 	}
 
+	// The PATH entry is often a symlink into somewhere more telling —
+	// fnm's per-shell multishell shims are the canonical case (#111):
+	// ~/.local/state/fnm_multishells/<id>/bin/node resolves into
+	// $FNM_DIR/node-versions/<v>/installation/bin/node, squarely under
+	// a manager root. Resolve once and consult both locations below.
+	// A failed resolution (broken link, permission) just leaves the
+	// original path as the only candidate.
+	resolved := ""
+	if r, err := evalSymlinks(p); err == nil && r != p {
+		resolved = r
+	}
+
 	// If the binary is inside the manager's data dir, it's clearly
 	// managed. We try this first because the path-based classifier
 	// can false-positive on a manager that happens to live under
@@ -158,7 +170,7 @@ func ResolveSystemNode(ctx context.Context, m Manager) (SystemNodeInfo, error) {
 	if m != nil {
 		if managedRoots, ok := managerManagedRoots(m); ok {
 			for _, root := range managedRoots {
-				if isInside(p, root) {
+				if isInside(p, root) || (resolved != "" && isInside(resolved, root)) {
 					return SystemNodeInfo{
 						Path:    p,
 						Kind:    SystemNodeManaged,
@@ -169,9 +181,20 @@ func ResolveSystemNode(ctx context.Context, m Manager) (SystemNodeInfo, error) {
 		}
 	}
 
+	// Classification deliberately prefers the unresolved path: for
+	// several recognized layouts the symlink itself is the signal
+	// (Debian's /usr/bin/node → /etc/alternatives/node → /usr/lib/...
+	// must stay os-package, not become unknown). The resolved path is
+	// only consulted when the original is unrecognized, so resolution
+	// can upgrade a classification but never downgrade one.
+	kind := classifySystemNodePath(p)
+	if kind == SystemNodeUnknown && resolved != "" {
+		kind = classifySystemNodePath(resolved)
+	}
+
 	return SystemNodeInfo{
 		Path: p,
-		Kind: classifySystemNodePath(p),
+		Kind: kind,
 	}, nil
 }
 
@@ -379,11 +402,10 @@ func managerManagedRoots(m Manager) (roots []string, ok bool) {
 		// every plausible root so the path classifier still
 		// recognizes an fnm-managed install when FNM_DIR is
 		// unset. The env override is checked first.
-		if d := strings.TrimSpace(getenv("FNM_DIR")); d != "" {
-			return []string{d}, true
-		}
 		roots := []string{}
-		if h, err := userHomeDir(); err == nil {
+		if d := strings.TrimSpace(getenv("FNM_DIR")); d != "" {
+			roots = append(roots, d)
+		} else if h, err := userHomeDir(); err == nil {
 			roots = append(roots,
 				filepath.Join(h, ".fnm"),
 				filepath.Join(h, "Library", "Application Support", "fnm"),
@@ -393,6 +415,31 @@ func managerManagedRoots(m Manager) (roots []string, ok bool) {
 			} else {
 				roots = append(roots, filepath.Join(h, ".local", "share", "fnm"))
 			}
+		}
+
+		// Multishell farm roots, always appended: fnm's shell
+		// integration puts a per-shell symlink dir on PATH
+		// ($FNM_MULTISHELL_PATH/bin), not FNM_DIR itself, so the
+		// node binary found via PATH lives under the farm and only
+		// symlink resolution leads back to FNM_DIR. Recognizing the
+		// farm directly keeps the classifier working even when
+		// resolution fails. See issue #111.
+		if ms := strings.TrimSpace(getenv("FNM_MULTISHELL_PATH")); ms != "" {
+			// The var names this shell's own instance dir; its parent
+			// is the farm, which also covers instances belonging to
+			// other still-open shells found via a stale PATH entry.
+			roots = append(roots, ms, filepath.Dir(ms))
+		}
+		if xs := strings.TrimSpace(getenv("XDG_STATE_HOME")); xs != "" {
+			roots = append(roots, filepath.Join(xs, "fnm_multishells"))
+		}
+		if h, err := userHomeDir(); err == nil {
+			// fnm's default state dir on macOS + Linux.
+			roots = append(roots, filepath.Join(h, ".local", "state", "fnm_multishells"))
+		}
+		if tmp := strings.TrimSpace(getenv("TMPDIR")); tmp != "" {
+			// Legacy fnm versions kept the farm under the OS temp dir.
+			roots = append(roots, filepath.Join(tmp, "fnm_multishells"))
 		}
 		return roots, true
 	case "nvm":

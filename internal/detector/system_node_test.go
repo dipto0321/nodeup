@@ -179,6 +179,16 @@ func stubWhichNode(t *testing.T, fn func(ctx context.Context) (string, error)) {
 	whichNode = fn
 }
 
+// stubEvalSymlinks replaces the package-level evalSymlinks seam for
+// the duration of the test. Canned resolutions avoid creating real
+// symlinks, which need elevated rights on Windows runners.
+func stubEvalSymlinks(t *testing.T, fn func(string) (string, error)) {
+	t.Helper()
+	orig := evalSymlinks
+	t.Cleanup(func() { evalSymlinks = orig })
+	evalSymlinks = fn
+}
+
 func TestResolveSystemNode_NoNodeOnPATH(t *testing.T) {
 	stubWhichNode(t, func(ctx context.Context) (string, error) {
 		return "", nil // which silently returned empty
@@ -289,6 +299,109 @@ func TestResolveSystemNode_NilManagerSafe(t *testing.T) {
 	}
 }
 
+func TestResolveSystemNode_SymlinkResolvesIntoManagerRoot(t *testing.T) {
+	// The issue #111 shape: the PATH entry is an fnm multishell shim
+	// that lives nowhere near FNM_DIR, but symlink-resolves into it.
+	// The manager-root match must fire on the resolved location.
+	t.Setenv("FNM_DIR", "/custom/fnm")
+
+	const shim = "/weird/shells/81335_1783094161422/bin/node"
+	stubWhichNode(t, func(ctx context.Context) (string, error) {
+		return shim, nil
+	})
+	stubEvalSymlinks(t, func(p string) (string, error) {
+		if p == shim {
+			return "/custom/fnm/node-versions/v24.18.0/installation/bin/node", nil
+		}
+		return p, nil
+	})
+
+	info, err := ResolveSystemNode(context.Background(), fakeManager{name: "fnm"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.Kind != SystemNodeManaged {
+		t.Errorf("Kind = %s, want %s (resolved path is under FNM_DIR)", info.Kind, SystemNodeManaged)
+	}
+	if info.Manager != "fnm" {
+		t.Errorf("Manager = %q, want %q", info.Manager, "fnm")
+	}
+	if info.Path != shim {
+		t.Errorf("Path = %q, want the original PATH entry %q", info.Path, shim)
+	}
+}
+
+func TestResolveSystemNode_MultishellFarmRootWithoutResolution(t *testing.T) {
+	// Even when symlink resolution fails outright, a node under the
+	// fnm multishell farm must classify as fnm-managed: the farm
+	// parent of $FNM_MULTISHELL_PATH is a recognized root, covering
+	// sibling instances left on PATH by other shells.
+	t.Setenv("FNM_MULTISHELL_PATH", "/state/fnm_multishells/999_1")
+
+	stubWhichNode(t, func(ctx context.Context) (string, error) {
+		return "/state/fnm_multishells/123_9/bin/node", nil
+	})
+	stubEvalSymlinks(t, func(p string) (string, error) {
+		return "", errors.New("broken link")
+	})
+
+	info, err := ResolveSystemNode(context.Background(), fakeManager{name: "fnm"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.Kind != SystemNodeManaged {
+		t.Errorf("Kind = %s, want %s (farm root should match without resolution)", info.Kind, SystemNodeManaged)
+	}
+	if info.Manager != "fnm" {
+		t.Errorf("Manager = %q, want %q", info.Manager, "fnm")
+	}
+}
+
+func TestResolveSystemNode_ResolvedPathUpgradesUnknownClassification(t *testing.T) {
+	// No manager attribution (nil manager). A path the classifier
+	// doesn't recognize, resolving into a recognized layout, should
+	// take the resolved classification — while Path keeps the
+	// original PATH entry for display.
+	stubWhichNode(t, func(ctx context.Context) (string, error) {
+		return "/weird/place/node", nil
+	})
+	stubEvalSymlinks(t, func(p string) (string, error) {
+		return "/opt/homebrew/Cellar/node/26.4.0/bin/node", nil
+	})
+
+	info, err := ResolveSystemNode(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.Kind != SystemNodeHomebrewCore {
+		t.Errorf("Kind = %s, want %s (resolved into the Cellar)", info.Kind, SystemNodeHomebrewCore)
+	}
+	if info.Path != "/weird/place/node" {
+		t.Errorf("Path = %q, want the original PATH entry", info.Path)
+	}
+}
+
+func TestResolveSystemNode_OriginalClassificationWinsOverResolved(t *testing.T) {
+	// Debian-alternatives shape: /usr/bin/node is a symlink into
+	// /etc/alternatives, which the classifier does NOT recognize.
+	// The original path's os-package classification must win —
+	// resolution may only upgrade Unknown, never replace a match.
+	stubWhichNode(t, func(ctx context.Context) (string, error) {
+		return "/usr/bin/node", nil
+	})
+	stubEvalSymlinks(t, func(p string) (string, error) {
+		return "/etc/alternatives/node", nil
+	})
+
+	info, err := ResolveSystemNode(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if info.Kind != SystemNodeOSPackage {
+		t.Errorf("Kind = %s, want %s (original classification must win)", info.Kind, SystemNodeOSPackage)
+	}
+}
+
 // --- managerManagedRoots ---------------------------------------------------
 
 func TestManagerManagedRoots(t *testing.T) {
@@ -308,9 +421,15 @@ func TestManagerManagedRoots(t *testing.T) {
 		"FNM_DIR", "NVM_DIR", "VOLTA_HOME", "ASDF_DIR", "ASDF_DATA_DIR",
 		"MISE_DATA_DIR", "N_PREFIX", "NODENV_ROOT",
 		"XDG_DATA_HOME",
+		"FNM_MULTISHELL_PATH", "XDG_STATE_HOME", "TMPDIR",
 	} {
 		t.Setenv(v, "")
 	}
+
+	// The fnm multishell state-dir root is derived from userHomeDir
+	// and appended unconditionally (issue #111), so every fnm case
+	// expects it as a suffix.
+	fnmStateRoot := filepath.Join("/home/tester", ".local", "state", "fnm_multishells")
 
 	cases := []struct {
 		name        string
@@ -324,9 +443,9 @@ func TestManagerManagedRoots(t *testing.T) {
 		{
 			name: "fnm env wins over home fallback",
 			mgr:  "fnm", envKey: "FNM_DIR", envVal: "/custom/fnm",
-			wantRoots:   []string{"/custom/fnm"},
+			wantRoots:   []string{"/custom/fnm", fnmStateRoot},
 			wantOK:      true,
-			description: "env override takes precedence",
+			description: "env override replaces the data-dir candidates; multishell state root always present",
 		},
 		{
 			name: "fnm falls back to home (no env)",
@@ -335,6 +454,7 @@ func TestManagerManagedRoots(t *testing.T) {
 				filepath.Join("/home/tester", ".fnm"),
 				filepath.Join("/home/tester", "Library", "Application Support", "fnm"),
 				filepath.Join("/home/tester", ".local", "share", "fnm"),
+				fnmStateRoot,
 			},
 			wantOK:      true,
 			description: "no env → enumerate plausible XDG + legacy roots",
@@ -346,9 +466,50 @@ func TestManagerManagedRoots(t *testing.T) {
 				filepath.Join("/home/tester", ".fnm"),
 				filepath.Join("/home/tester", "Library", "Application Support", "fnm"),
 				filepath.Join("/srv/data", "fnm"),
+				fnmStateRoot,
 			},
 			wantOK:      true,
 			description: "XDG_DATA_HOME wins over ~/.local/share",
+		},
+		{
+			name: "fnm multishell env adds instance + farm",
+			mgr:  "fnm", envKey: "FNM_MULTISHELL_PATH", envVal: "/state/fnm_multishells/999_1",
+			wantRoots: []string{
+				filepath.Join("/home/tester", ".fnm"),
+				filepath.Join("/home/tester", "Library", "Application Support", "fnm"),
+				filepath.Join("/home/tester", ".local", "share", "fnm"),
+				"/state/fnm_multishells/999_1",
+				"/state/fnm_multishells",
+				fnmStateRoot,
+			},
+			wantOK:      true,
+			description: "FNM_MULTISHELL_PATH contributes the instance dir and its farm parent (#111)",
+		},
+		{
+			name: "fnm XDG_STATE_HOME multishell root",
+			mgr:  "fnm", envKey: "XDG_STATE_HOME", envVal: "/srv/state",
+			wantRoots: []string{
+				filepath.Join("/home/tester", ".fnm"),
+				filepath.Join("/home/tester", "Library", "Application Support", "fnm"),
+				filepath.Join("/home/tester", ".local", "share", "fnm"),
+				filepath.Join("/srv/state", "fnm_multishells"),
+				fnmStateRoot,
+			},
+			wantOK:      true,
+			description: "XDG_STATE_HOME contributes its fnm_multishells farm (#111)",
+		},
+		{
+			name: "fnm TMPDIR legacy multishell root",
+			mgr:  "fnm", envKey: "TMPDIR", envVal: "/tmpx",
+			wantRoots: []string{
+				filepath.Join("/home/tester", ".fnm"),
+				filepath.Join("/home/tester", "Library", "Application Support", "fnm"),
+				filepath.Join("/home/tester", ".local", "share", "fnm"),
+				fnmStateRoot,
+				filepath.Join("/tmpx", "fnm_multishells"),
+			},
+			wantOK:      true,
+			description: "legacy fnm kept the farm under the OS temp dir (#111)",
 		},
 		{
 			name: "nvm env wins",
