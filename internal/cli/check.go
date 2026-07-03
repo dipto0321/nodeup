@@ -118,7 +118,7 @@ func outputCheckJSON(cmd *cobra.Command, lts, current *node.ManifestVersion, ins
 
 	installedVersions := make([]string, 0)
 	for _, m := range installed.Found {
-		versions, err := m.ListInstalled()
+		versions, err := m.ListInstalled(cmd.Context())
 		if err != nil {
 			continue
 		}
@@ -153,7 +153,7 @@ func outputCheckTable(cmd *cobra.Command, lts, current *node.ManifestVersion, in
 	} else {
 		cmd.Println("Installed versions:")
 		for _, m := range installed.Found {
-			versions, err := m.ListInstalled()
+			versions, err := m.ListInstalled(cmd.Context())
 			if err != nil {
 				cmd.Printf("  - %s: [error listing versions]\n", m.Name())
 				continue

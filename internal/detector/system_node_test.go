@@ -599,16 +599,16 @@ func TestWarnSystemNode_WritesToWriter(t *testing.T) {
 // return zero values.
 type fakeManager struct{ name string }
 
-func (f fakeManager) Name() string                                   { return f.name }
-func (f fakeManager) Detect() bool                                   { return true }
-func (f fakeManager) Version() (string, error)                       { return "0.0.0-test", nil }
-func (f fakeManager) ListInstalled() ([]semver.Version, error)       { return nil, nil }
-func (f fakeManager) Install(semver.Version) error                   { return nil }
-func (f fakeManager) Uninstall(semver.Version) error                 { return nil }
-func (f fakeManager) Use(semver.Version) error                       { return nil }
-func (f fakeManager) SetDefault(semver.Version) error                { return nil }
-func (f fakeManager) GlobalNpmPrefix(semver.Version) (string, error) { return "", nil }
-func (f fakeManager) Current() (semver.Version, error)               { return semver.Version{}, nil }
+func (f fakeManager) Name() string                                            { return f.name }
+func (f fakeManager) Detect() bool                                            { return true }
+func (f fakeManager) Version() (string, error)                                { return "0.0.0-test", nil }
+func (f fakeManager) ListInstalled(context.Context) ([]semver.Version, error) { return nil, nil }
+func (f fakeManager) Install(semver.Version) error                            { return nil }
+func (f fakeManager) Uninstall(semver.Version) error                          { return nil }
+func (f fakeManager) Use(semver.Version) error                                { return nil }
+func (f fakeManager) SetDefault(semver.Version) error                         { return nil }
+func (f fakeManager) GlobalNpmPrefix(semver.Version) (string, error)          { return "", nil }
+func (f fakeManager) Current(context.Context) (semver.Version, error)         { return semver.Version{}, nil }
 
 func equalStringSlices(a, b []string) bool {
 	if len(a) != len(b) {

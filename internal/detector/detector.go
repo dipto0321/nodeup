@@ -19,6 +19,7 @@
 package detector
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -47,8 +48,11 @@ type Manager interface {
 	Version() (string, error)
 
 	// ListInstalled returns every Node.js version the manager currently
-	// has installed, sorted ascending.
-	ListInstalled() ([]semver.Version, error)
+	// has installed, sorted ascending. Implementations should respect
+	// ctx cancellation so a Ctrl-C during `nodeup upgrade` propagates
+	// into the underlying `manager list` subprocess. The CLI layer
+	// passes cmd.Context().
+	ListInstalled(ctx context.Context) ([]semver.Version, error)
 
 	// Install downloads and installs the given Node.js version.
 	Install(v semver.Version) error
@@ -73,8 +77,9 @@ type Manager interface {
 	// manager has no way to query the active version (e.g.,
 	// nvm-windows — that one returns a sentinel "not implemented"
 	// error). Callers should treat errors as "active version unknown"
-	// and proceed without excluding it.
-	Current() (semver.Version, error)
+	// and proceed without excluding it. Implementations should respect
+	// ctx cancellation; the CLI layer passes cmd.Context().
+	Current(ctx context.Context) (semver.Version, error)
 }
 
 // Registry holds the list of managers nodeup knows about. It is built

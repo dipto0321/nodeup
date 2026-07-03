@@ -217,8 +217,8 @@ func parseNodenvVersion(stdout string) (string, error) {
 // a non-zero exit becomes an error from ListInstalled rather than a
 // silent empty slice. (This matches asdf's behavior with an empty
 // install.)
-func (nd *Nodenv) ListInstalled() ([]semver.Version, error) {
-	res, err := runShell(context.Background(), "nodenv", "versions")
+func (nd *Nodenv) ListInstalled(ctx context.Context) ([]semver.Version, error) {
+	res, err := runShell(ctx, "nodenv", "versions")
 	if err != nil {
 		return nil, fmt.Errorf("nodenv versions: %w", err)
 	}
@@ -384,8 +384,8 @@ func (nd *Nodenv) GlobalNpmPrefix(ver semver.Version) (string, error) {
 // "22.11.0" (no prefix on the version itself), or "system" when
 // the system Node is the active one. We treat "system" as an error
 // so the cleanup prompt doesn't try to exclude it.
-func (nd *Nodenv) Current() (semver.Version, error) {
-	res, err := runShell(context.Background(), "nodenv", "version")
+func (nd *Nodenv) Current(ctx context.Context) (semver.Version, error) {
+	res, err := runShell(ctx, "nodenv", "version")
 	if err != nil {
 		return semver.Version{}, fmt.Errorf("nodenv version: %w", err)
 	}

@@ -368,7 +368,7 @@ func TestMise_ListInstalled_Success(t *testing.T) {
 		},
 	)
 
-	got, err := NewMise().ListInstalled()
+	got, err := NewMise().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestMise_ListInstalled_EmptyArray(t *testing.T) {
 		return &platform.RunResult{Stdout: "[]"}, nil
 	})
 
-	got, err := NewMise().ListInstalled()
+	got, err := NewMise().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -418,7 +418,7 @@ func TestMise_ListInstalled_EmptyStdout(t *testing.T) {
 		return &platform.RunResult{Stdout: ""}, nil
 	})
 
-	got, err := NewMise().ListInstalled()
+	got, err := NewMise().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -436,7 +436,7 @@ func TestMise_ListInstalled_RunShellError(t *testing.T) {
 		return nil, wantErr
 	})
 
-	_, err := NewMise().ListInstalled()
+	_, err := NewMise().ListInstalled(t.Context())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -451,7 +451,7 @@ func TestMise_ListInstalled_JSONParseError(t *testing.T) {
 		return &platform.RunResult{Stdout: "{not json"}, nil
 	})
 
-	_, err := NewMise().ListInstalled()
+	_, err := NewMise().ListInstalled(t.Context())
 	if err == nil {
 		t.Error("expected JSON parse error, got nil")
 	}
@@ -629,7 +629,7 @@ func TestMiseCurrent_InvokesShell(t *testing.T) {
 		},
 	)
 
-	got, err := NewMise().Current()
+	got, err := NewMise().Current(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

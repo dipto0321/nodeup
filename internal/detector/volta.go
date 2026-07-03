@@ -195,7 +195,7 @@ func parseVoltaVersion(stdout string) (string, error) {
 // Non-directory entries (which Volta doesn't currently emit, but we
 // guard against) are skipped. Volta does NOT have an nvm-style
 // "system" sentinel, so no special-case is needed.
-func (v *Volta) ListInstalled() ([]semver.Version, error) {
+func (v *Volta) ListInstalled(ctx context.Context) ([]semver.Version, error) {
 	home := voltaHome()
 	if home == "" {
 		return nil, errors.New("volta not detected: cannot resolve VOLTA_HOME or ~/.volta")
@@ -352,8 +352,8 @@ func (v *Volta) GlobalNpmPrefix(ver semver.Version) (string, error) {
 // The first row matching "node@v" (or "node@" — Volta 2.0 changed
 // the prefix handling) is the active version. We strip the "v"
 // prefix (and the optional "active" suffix) before parsing.
-func (v *Volta) Current() (semver.Version, error) {
-	res, err := runShell(context.Background(), "volta", "list", "--format=plain")
+func (v *Volta) Current(ctx context.Context) (semver.Version, error) {
+	res, err := runShell(ctx, "volta", "list", "--format=plain")
 	if err != nil {
 		return semver.Version{}, fmt.Errorf("volta list: %w", err)
 	}

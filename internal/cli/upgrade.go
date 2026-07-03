@@ -166,7 +166,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get installed versions
-	installedVersions, err := m.ListInstalled()
+	installedVersions, err := m.ListInstalled(cmd.Context())
 	if err != nil {
 		return fmt.Errorf("list installed versions: %w", err)
 	}
@@ -331,7 +331,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		// why the prompt is now per-version. See #58.
 		var active semver.Version
 		var currentErr error
-		if cur, cerr := m.Current(); cerr == nil {
+		if cur, cerr := m.Current(cmd.Context()); cerr == nil {
 			active = cur
 		} else {
 			currentErr = cerr

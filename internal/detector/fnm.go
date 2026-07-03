@@ -101,8 +101,8 @@ func parseFNMVersion(stdout string) (string, error) {
 // it. The literal "system" line (which represents the system Node, not
 // an fnm-managed install) is excluded — nodeup only cares about versions
 // fnm actually manages.
-func (f *FNM) ListInstalled() ([]semver.Version, error) {
-	res, err := runShell(context.Background(), "fnm", "list")
+func (f *FNM) ListInstalled(ctx context.Context) ([]semver.Version, error) {
+	res, err := runShell(ctx, "fnm", "list")
 	if err != nil {
 		return nil, fmt.Errorf("fnm list: %w", err)
 	}
@@ -304,8 +304,8 @@ func fnmDir() string {
 // shells — i.e., `fnm current`. The output is a bare semver like
 // "v22.11.0" or "22.11.0"; fnm 1.39+ includes a "v" prefix, older
 // versions don't. We strip the prefix defensively.
-func (f *FNM) Current() (semver.Version, error) {
-	res, err := runShell(context.Background(), "fnm", "current")
+func (f *FNM) Current(ctx context.Context) (semver.Version, error) {
+	res, err := runShell(ctx, "fnm", "current")
 	if err != nil {
 		return semver.Version{}, fmt.Errorf("fnm current: %w", err)
 	}

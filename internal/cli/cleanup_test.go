@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -24,15 +25,15 @@ type stubManager struct {
 	currentErr error
 }
 
-func (s *stubManager) Name() string                                   { return s.name }
-func (s *stubManager) Detect() bool                                   { return true }
-func (s *stubManager) Version() (string, error)                       { return "0.0.0-test", nil }
-func (s *stubManager) ListInstalled() ([]semver.Version, error)       { return nil, nil }
-func (s *stubManager) Install(semver.Version) error                   { return nil }
-func (s *stubManager) Use(semver.Version) error                       { return nil }
-func (s *stubManager) SetDefault(semver.Version) error                { return nil }
-func (s *stubManager) GlobalNpmPrefix(semver.Version) (string, error) { return "", nil }
-func (s *stubManager) Current() (semver.Version, error) {
+func (s *stubManager) Name() string                                            { return s.name }
+func (s *stubManager) Detect() bool                                            { return true }
+func (s *stubManager) Version() (string, error)                                { return "0.0.0-test", nil }
+func (s *stubManager) ListInstalled(context.Context) ([]semver.Version, error) { return nil, nil }
+func (s *stubManager) Install(semver.Version) error                            { return nil }
+func (s *stubManager) Use(semver.Version) error                                { return nil }
+func (s *stubManager) SetDefault(semver.Version) error                         { return nil }
+func (s *stubManager) GlobalNpmPrefix(semver.Version) (string, error)          { return "", nil }
+func (s *stubManager) Current(context.Context) (semver.Version, error) {
 	if s.currentErr != nil {
 		return semver.Version{}, s.currentErr
 	}

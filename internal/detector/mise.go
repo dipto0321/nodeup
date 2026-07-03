@@ -197,8 +197,8 @@ func parseMiseVersion(stdout string) (string, error) {
 //
 // Note: mise does not have an nvm-style "system" sentinel — we
 // don't filter for one.
-func (m *Mise) ListInstalled() ([]semver.Version, error) {
-	res, err := runShell(context.Background(), "mise", "ls", "--installed", "--json", "node")
+func (m *Mise) ListInstalled(ctx context.Context) ([]semver.Version, error) {
+	res, err := runShell(ctx, "mise", "ls", "--installed", "--json", "node")
 	if err != nil {
 		return nil, fmt.Errorf("mise ls --installed --json node: %w", err)
 	}
@@ -370,8 +370,8 @@ func miseDataDir() string {
 // Current returns the version Mise currently has active for the
 // user. Source: `mise current node`. The output is a bare semver
 // like "22.11.0" (with optional "v" prefix on some builds).
-func (m *Mise) Current() (semver.Version, error) {
-	res, err := runShell(context.Background(), "mise", "current", "node")
+func (m *Mise) Current(ctx context.Context) (semver.Version, error) {
+	res, err := runShell(ctx, "mise", "current", "node")
 	if err != nil {
 		return semver.Version{}, fmt.Errorf("mise current node: %w", err)
 	}
