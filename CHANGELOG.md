@@ -146,6 +146,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for the full rationale.
 
 ### Fixed
+- `.golangci.yml` / `Makefile` / `.github/workflows/ci.yml`:
+  migrated to the golangci-lint **v2** schema. The pre-fix file
+  targeted the v1 schema (no `version:` field, flat
+  `linters.enable`, `output.formats` as a slice), but the
+  Makefile told contributors to `brew install golangci-lint` —
+  which installs the current major version, v2.x, today. Any
+  contributor with a current Homebrew got
+  `Error: can't load config: ... 'output.formats' expected a
+  map, got 'slice'` instead of a lint failure, blocking
+  `make lint` and `make ci` end-to-end. CI was unaffected
+  because `golangci-lint-action@v6` pinned to `version:
+  v1.64.8`, but the local dev workflow documented in the
+  Makefile was effectively broken. We migrated with
+  `golangci-lint migrate` (preserving the original
+  exclusions/presets/rationale in hand-written comments),
+  bumped CI to `golangci/lint-action@v8` pinned to
+  `v2.12.2` (matching what Homebrew ships today), and updated
+  the Makefile `lint` target to refuse to run when
+  golangci-lint isn't installed and point contributors at
+  the exact `go install` command matching the CI pin. The
+  same lint set + exclusion rules + presets that v1 ran
+  with still apply (`bodyclose`, `contextcheck`, `errcheck`,
+  `gocritic`, `govet`, `ineffassign`, `misspell`,
+  `staticcheck`, `unused`; `gosimple` is folded into
+  `staticcheck` in v2; formatters `gofmt` + `goimports`
+  with `local-prefixes: github.com/dipto0321/nodeup`).
+  Confirmed locally: `make ci` is now green on a Homebrew
+  v2.12.2 install. Closes #62.
 - `internal/detector/n.go`: `N.Current()` no longer shells out
   to `n current` — an undocumented subcommand that upstream
   `tj/n` resolves as a label equivalent to "latest" and
