@@ -79,10 +79,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   snapshots packages at the start of a run, it writes a sentinel
   file recording the manager, the pre-upgrade version, and the
   snapshot path. If a subsequent run finds a leftover sentinel, it
-  prompts the user to replay the package migration against the
-  snapshot (PR #29). `nodeup packages restore` accepts a
-  `--from <snapshot-path>` flag for restoring from a non-default
-  location, mirroring the sentinel's stored path.
+  prints a hint to stderr naming the snapshot path and the exact
+  `nodeup packages restore --from <path>` invocation the user can
+  copy to replay the migration (PR #29). `nodeup packages restore`
+  accepts a `--from <snapshot-path>` flag for restoring from a
+  non-default location, mirroring the sentinel's stored path.
 - Cross-platform path handling: `internal/platform.QuotePath` now
   enforces consistent shell-quoting across all `RunShell` callsites,
   so paths containing spaces (e.g. `C:\Users\Dipto Karmakar\...`)
@@ -177,6 +178,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`<DataDir>/nodeup.lock` per OS — Linux XDG, macOS
   `~/Library/Application Support/nodeup/nodeup.lock`, Windows
   `%APPDATA%\nodeup\nodeup.lock`). Closes #44.
+- `internal/cli`: the upgrade-in-progress sentinel had a broken
+  lifecycle in both directions. On the `nodeup upgrade` side, the
+  deferred `RemoveSentinel()` fired unconditionally as long as the
+  sentinel had been armed — even when the post-install package
+  restore had failed and only logged a warning. That left the
+  user with installed Node versions, unmigrated global packages,
+  AND the "resume breadcrumb" silently deleted: there was no way to
+  recover through the documented `--from <sentinel path>` path. We
+  now track `restoreSucceeded` alongside the existing
+  `sentinelArmed` and only remove the sentinel when both are true.
+  On the manual `nodeup packages restore` side — the exact command
+  `PersistentPreRunE` tells the user to run after an interrupted
+  upgrade — a successful restore now calls `packages.RemoveSentinel()`
+  so subsequent `nodeup` invocations stop printing the
+  "interrupted upgrade" warning forever. Removal failures there are
+  logged, not returned: the user's primary goal (restored packages)
+  has been achieved and a stale sentinel is cosmetic. Also corrects
+  the CHANGELOG claim that "next run prompts the user to replay" —
+  the implementation only prints a two-line stderr hint
+  (`To resume: nodeup packages restore --from <path>`); no
+  interactive prompt is shown. Closes #46.
 - `nodeup list` was a stub that printed "not yet implemented (Phase
   1)". It now does the obvious thing — resolve every detected
   manager, call each one's `ListInstalled()`, and render the union

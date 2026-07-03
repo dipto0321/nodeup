@@ -141,12 +141,31 @@ func runRestore(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 	fromPath, _ := cmd.Flags().GetString("from")
 
+	// runRestore doubles as the "replay the upgrade-in-progress sentinel"
+	// command — PersistentPreRunE's hint (root.go:21-40) tells the user
+	// to invoke `nodeup packages restore --from <sentinel path>`. If the
+	// restore succeeds, the sentinel's job is done and we should clear
+	// it so the next `nodeup` invocation doesn't keep warning about an
+	// "interrupted upgrade" that has in fact been resolved.
+	//
+	// We unconditionally attempt the removal after success: a sentinel
+	// from a *different* (older) upgrade is harmless stale state, and
+	// the next upgrade would overwrite it anyway. We log (don't fail)
+	// on a removal error because the user's actual goal — restored
+	// packages — has already been achieved.
+	clearSentinel := func() {
+		if err := packages.RemoveSentinel(); err != nil {
+			cmd.Printf("Warning: failed to clear upgrade sentinel: %v\n", err)
+		}
+	}
+
 	// --from branch: read the path straight off disk, no manager or
 	// version parsing required.
 	if fromPath != "" {
 		if err := packages.RestoreFromSnapshot(ctx, fromPath); err != nil {
 			return fmt.Errorf("restore failed: %w", err)
 		}
+		clearSentinel()
 		cmd.Printf("Restored packages from %s\n", fromPath)
 		return nil
 	}
@@ -165,6 +184,7 @@ func runRestore(cmd *cobra.Command, args []string) error {
 	if err := packages.Restore(ctx, managerName, *v); err != nil {
 		return fmt.Errorf("restore failed: %w", err)
 	}
+	clearSentinel()
 
 	cmd.Printf("Restored packages for %s %s\n", managerName, versionStr)
 	return nil

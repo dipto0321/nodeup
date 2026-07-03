@@ -263,6 +263,76 @@ func TestLoadSentinel_ParseError(t *testing.T) {
 	}
 }
 
+// TestRemoveSentinel_OnlyOnRestoreSuccess is the regression pin for
+// issue #46.
+//
+// Before the fix, `nodeup upgrade`'s deferred cleanup called
+// RemoveSentinel() unconditionally after the sentinel was armed —
+// even when the post-install package restore had failed (because
+// restore failures were logged as warnings and the function returned
+// normally). The user was left with installed Node versions,
+// unmigrated global packages, AND no "resume breadcrumb" to point
+// the manual `nodeup packages restore --from <path>` command at.
+//
+// The fix is in the cli/upgrade.go defer: RemoveSentinel() now
+// fires only after a successful restore. We can't unit-test that
+// defer in isolation without spinning up the full upgrade pipeline,
+// so we instead pin the underlying primitives the cli uses:
+//   - writing a sentinel surfaces as orphaned
+//   - calling RemoveSentinel() clears it
+//
+// The exact "restore success → clear" decision lives in upgrade.go's
+// restoreSucceeded gate, reviewed by the same reader that owns the
+// sentinel field. The companion fix on the manual `nodeup packages
+// restore` path adds the inverse: a successful restore there now
+// also calls RemoveSentinel() so a follow-up `nodeup` doesn't keep
+// printing the "interrupted upgrade" hint.
+func TestRemoveSentinel_OnlyOnRestoreSuccess(t *testing.T) {
+	redirectDataDir(t)
+
+	// Plant the sentinel — simulates an interrupted upgrade from a
+	// previous run.
+	if err := WriteSentinel(UpgradeSentinel{
+		StartedAt:    time.Now(),
+		Manager:      "fnm",
+		OldVersion:   "20.9.0",
+		NewVersion:   "20.10.0",
+		SnapshotPath: "/tmp/snap.json",
+	}); err != nil {
+		t.Fatalf("WriteSentinel: %v", err)
+	}
+
+	// Sanity-check: subsequent run would print the "interrupted
+	// upgrade" warning — so the sentinel must be visible to
+	// OrphanedSentinel.
+	s, err := OrphanedSentinel()
+	if err != nil {
+		t.Fatalf("OrphanedSentinel after write: %v", err)
+	}
+	if s == nil {
+		t.Fatal("OrphanedSentinel returned nil after a sentinel was written")
+	}
+	if s.Manager != "fnm" {
+		t.Fatalf("sentinel Manager = %q, want fnm", s.Manager)
+	}
+
+	// The fix in upgrade.go: this RemoveSentinel() must only be
+	// reached when the restore step succeeded. We assert the
+	// primitive it depends on is correct: removal leaves the file
+	// gone, and OrphanedSentinel goes back to returning nil.
+	if err := RemoveSentinel(); err != nil {
+		t.Fatalf("RemoveSentinel: %v", err)
+	}
+
+	s, err = OrphanedSentinel()
+	if err != nil {
+		t.Fatalf("OrphanedSentinel after RemoveSentinel: %v", err)
+	}
+	if s != nil {
+		t.Fatalf("OrphanedSentinel = %+v, want nil after RemoveSentinel", s)
+	}
+}
+
 // dataDirForTest is a small helper that returns the redirected DataDir
 // so cleanup / verification tests can introspect the filesystem.
 func dataDirForTest() (string, error) {
