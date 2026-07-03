@@ -34,7 +34,7 @@ git push origin vX.Y.Z
 ## Post-tag (release.yml fires automatically)
 
 - [ ] GitHub Release visible at /releases/tag/vX.Y.Z
-- [ ] All 6 binaries attached + checksums.txt
+- [ ] All 5 binaries attached + checksums.txt
 - [ ] Homebrew formula pushed to `dipto0321/homebrew-tap`
 - [ ] Scoop manifest pushed to `dipto0321/scoop-bucket`
 - [ ] npm wrapper published to the npm registry (see below)
