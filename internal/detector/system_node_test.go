@@ -479,7 +479,9 @@ func TestManagerManagedRoots(t *testing.T) {
 				filepath.Join("/home/tester", "Library", "Application Support", "fnm"),
 				filepath.Join("/home/tester", ".local", "share", "fnm"),
 				"/state/fnm_multishells/999_1",
-				"/state/fnm_multishells",
+				// filepath.Dir normalizes separators (backslashes on
+				// Windows), so mirror production instead of a literal.
+				filepath.Dir("/state/fnm_multishells/999_1"),
 				fnmStateRoot,
 			},
 			wantOK:      true,
