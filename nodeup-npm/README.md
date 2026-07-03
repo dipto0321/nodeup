@@ -1,11 +1,11 @@
-# nodeup-cli (npm wrapper)
+# nodeupx (npm wrapper)
 
 > Thin npm wrapper around the [`nodeup`](https://github.com/dipto0321/nodeup)
 > Go binary. Installs the right static binary for your OS/arch on
-> `npm install -g nodeup-cli` and exposes `nodeup` on your `$PATH`.
+> `npm install -g nodeupx` and exposes `nodeup` on your `$PATH`.
 
 This directory is the **npm distribution channel** for `nodeup`. The
-package is published as **`nodeup-cli`** because the bare `nodeup`
+package is published as **`nodeupx`** because the bare `nodeup`
 name on npmjs.com is owned by an unrelated, dormant 2015 package
 (`romanmt/nodeup`, "a simple cluster implementation for node").
 The downloaded binary still ships as the `nodeup` CLI you know.
@@ -18,7 +18,7 @@ package's `binaryVersion` field points at.
 ## Install
 
 ```bash
-npm install -g nodeup-cli
+npm install -g nodeupx
 nodeup version
 ```
 
@@ -73,7 +73,7 @@ release bump ship in the same commit.
 ## Updating
 
 ```bash
-npm update -g nodeup-cli
+npm update -g nodeupx
 ```
 
 You get a new wrapper version. If that wrapper pins a newer

@@ -1,5 +1,5 @@
 {
-  "name": "nodeup-cli",
+  "name": "nodeupx",
   "version": "1.0.1",
   "description": "Automated Node.js version upgrade + global package migration CLI. Static Go binary wrapped for npm distribution.",
   "license": "MIT",
