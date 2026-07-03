@@ -6,13 +6,15 @@
 #   SCOOP_BUCKET_TOKEN     — provided by GitHub Actions (per-repo secret)
 #
 # Outputs:
-#   - 6 single-binary archives in dist/:
+#   - 5 single-binary archives in dist/ (windows/arm64 is intentionally
+#     excluded by the builds[].ignore block — add later if demanded):
 #       nodeup_<version>_linux_amd64.tar.gz
 #       nodeup_<version>_linux_arm64.tar.gz
 #       nodeup_<version>_darwin_amd64.tar.gz
 #       nodeup_<version>_darwin_arm64.tar.gz
 #       nodeup_<version>_windows_amd64.zip
-#   - checksums.txt with SHA256 for every artifact
+#   - checksums.txt with SHA256 for every artifact (the 6th release
+#     file, but it's a checksums manifest, not a binary)
 #   - A GitHub Release titled `v<version>` with changelog and all artifacts
 #   - A homebrew formula pushed to github.com/dipto0321/homebrew-tap
 #   - A scoop manifest pushed to github.com/dipto0321/scoop-bucket

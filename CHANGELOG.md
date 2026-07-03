@@ -709,6 +709,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dead `confirm := true` / `_ = confirm` lines in `cleanup.go`
   and the `_ = yes` line in `upgrade.go` flagged in #61 had
   already been removed by #76 / PR #95. Closes #61.
+- Bundled CI/release tooling doc-accuracy fixes from issue #69:
+  `CONTRIBUTING.md` claimed a 10-check matrix including a
+  nonexistent "CoGitto status check" (contradicting its own
+  later "Sign-off (future)" section, which correctly notes
+  CoGitto-style enforcement is "not required today"). Dropped
+  the bogus check and corrected the matrix count to 9 (5
+  builds + 1 lint + 3 OS tests). The same paragraph's
+  description of `make ci` was wrong (omitted `fmt`, misstated
+  order); now correctly states `tidy fmt vet lint test` and
+  warns that `fmt` rewrites the working tree in place. The
+  `make ci` description in `CLAUDE.md` was already correct and
+  is unchanged. `.goreleaser.yaml`, `.github/workflows/release.yml`,
+  and `docs/release-checklist.md` all claimed "6 binaries"
+  attached — the actual matrix (linux/windows/darwin ×
+  amd64/arm64, minus the documented `windows/arm64` exclusion)
+  produces 5 archives + checksums.txt; all three are corrected
+  to say "5 binaries + checksums.txt." `.github/workflows/ci.yml`
+  was uploading `coverage.txt` to Codecov while the documented
+  `make test` produces `coverage.out`; renamed to `coverage.out`
+  so a contributor running the documented `make test` sees the
+  same filename CI consumes. Closes #69.
 
 ## [0.0.0] - 2024-07-01
 

@@ -73,11 +73,10 @@ config.manager=<name> explicitly, or omit the key for auto-detect.
    commitlint rules.
 3. **Fill in `.github/PULL_REQUEST_TEMPLATE.md`.** The Type-of-change
    checklist maps to the SemVer bump.
-4. **CI must be green.** Same 10-check matrix as `main`:
+4. **CI must be green.** Same 9-check matrix as `main`:
    - 5 builds (linux/darwin × amd64/arm64 + windows/amd64)
    - 1 lint (golangci-lint + commitlint)
    - 3 OS tests (ubuntu/macos/windows)
-   - 1 CoGitto status check
 5. **Squash-merge with the source branch deleted** — same as PRs #1–#10.
 6. **No force-pushes after review.** Force-pushes during authoring are
    fine (use `--force-with-lease`).
@@ -107,9 +106,13 @@ go test ./internal/detector/...
 go test ./internal/detector/... -run TestNvm
 ```
 
-`make ci` runs `tidy`, `vet`, `test`, and `golangci-lint run`. There is
-no separate "docs regen" step — docs are pure markdown and updated by
-hand in PRs.
+`make ci` runs `tidy fmt vet lint test` (in that order). The `fmt`
+step rewrites Go files in place (`gofmt -s -w .` + `goimports -w .`),
+so run it on a clean tree or be ready to commit the rewrites — a
+contributor who only read the previous version of this paragraph
+wouldn't expect `make ci` to mutate their working tree. There is
+no separate "docs regen" step — docs are pure markdown and updated
+by hand in PRs.
 
 ## Issue etiquette
 

@@ -100,7 +100,7 @@ jobs:
         shell: bash
         run: |
           go test -race \
-            -coverprofile coverage.txt \
+            -coverprofile coverage.out \
             -covermode atomic \
             ./...
 
@@ -108,7 +108,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         uses: codecov/codecov-action@v4
         with:
-          file: coverage.txt
+          file: coverage.out
           flags: unittests
           fail_ci_if_error: false
         env:

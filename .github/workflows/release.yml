@@ -5,7 +5,8 @@
 #   1. Checkout at full depth so GoReleaser can read every commit.
 #   2. Set up Go with the same version pin as CI.
 #   3. Run `goreleaser release --clean` which:
-#        - Builds all 6 platform binaries (linux/darwin/windows × amd64/arm64)
+#        - Builds all 5 platform binaries (linux/darwin/windows × amd64/arm64,
+#          minus the windows/arm64 entry that's excluded in .goreleaser.yaml)
 #        - Generates SHA256 checksums
 #        - Creates a GitHub Release with an auto-generated changelog
 #        - Pushes to the homebrew-tap repo (if HOMEBREW_TAP_TOKEN is set)
