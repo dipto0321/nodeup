@@ -146,6 +146,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for the full rationale.
 
 ### Fixed
+- `internal/cli` (`upgrade.go`): `--yes --no-cleanup` no longer
+  silently auto-deletes every eligible old Node.js version. The
+  `if yes { ... }` block at upgrade.go:107-111 ran unconditionally
+  AFTER the `switch` that was supposed to make `--no-cleanup` win,
+  so it flipped `NonInteractive` back to `false` and set
+  `AutoDeleteAll=true`, regardless of `noCleanup`. A CI script
+  that habitually passes `-y`/`--yes` (the documented
+  `--no-cleanup` contract is "never prompt, never delete") would
+  therefore lose Node installs it never asked to remove. The
+  cleanup-toggle resolution is now factored into a pure helper
+  `resolveCleanupConfig(noCleanup, autoCleanup, yes, versions, cfg)`
+  in `cleanup.go` so it's testable in isolation; the `--yes`
+  block is guarded by `&& !noCleanup`, restoring `--no-cleanup`'s
+  precedence. New tests in `cleanup_config_test.go` pin the
+  precedence table (including the negative-path matrix where
+  `--no-cleanup` beats every other knob). Closes #57.
+- `internal/cli/packages.go` (`runRestore` and `runDiff`): the
+  `<manager>` positional argument is now validated against a
+  canonical allowlist (`detector.IsAllowedManagerName`) before any
+  filesystem path is constructed. Pre-fix, the manager name was
+  interpolated verbatim into a snapshot filename
+  (`fmt.Sprintf("%s-%s.json", managerName, version)`) and the
+  result was `filepath.Join`'d into the snapshots dir — and
+  `filepath.Join` collapses `..` segments, so a manager name like
+  `../../tmp/evil` resolved outside the snapshots directory. An
+  attacker with a local file-placement primitive (a shared temp
+  directory, a cloned repo containing a payload filename like
+  `<prefix>../../tmp/evil-1.0.0.json`) could have the resulting
+  snapshot's `Packages` list piped straight into
+  `npm install -g <name>@<version>` with no validation. The
+  allowlist is built from `detector.AllowedManagerNames()` (a new
+  helper that derives the list from `detector.All()`), so the
+  set stays in sync with the per-platform build files; the match
+  is byte-for-byte case-sensitive (matching the `--manager` flag),
+  and the error message surfaces the offender and the allowlist
+  so typos remain user-fixable. `internal/detector/manager_names.go`
+  (new file) holds the helpers; `manager_names_test.go` pins
+  AllowedManagerNames ↔ All() parity and IsAllowedManagerName
+  behaviour (incl. traversal payloads, case-fold negativity, and
+  near-miss strings). Closes #51.
 - `internal/cli`: upgrade loop's restore step was looking up its
   snapshot by the **new** installed Node version
   (`packages.Restore(ctx, mgr, *v)` where `v` came from `toInstall`),

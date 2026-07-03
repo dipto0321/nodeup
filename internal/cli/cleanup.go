@@ -8,6 +8,7 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 
+	"github.com/dipto0321/nodeup/internal/config"
 	"github.com/dipto0321/nodeup/internal/detector"
 )
 
@@ -62,6 +63,54 @@ type cleanupConfig struct {
 	// When set, the all-or-nothing prompt is skipped and only
 	// these versions are offered for deletion.
 	Prefiltered []semver.Version
+}
+
+// resolveCleanupConfig maps the post-upgrade cleanup toggles (CLI flags
+// + config-file values) into the cleanupConfig struct that
+// runCleanupPrompt consumes.
+//
+// Precedence, highest first:
+//
+//	--no-cleanup             → NonInteractive=true; nothing else applies.
+//	                          --no-cleanup's documented contract is
+//	                          "never prompt, never delete" and it beats
+//	                          every other toggle, including --yes. A CI
+//	                          script that always passes `-y`/`--yes`
+//	                          must NOT silently delete Node installs
+//	                          the user told it to keep. See #57.
+//	--cleanup                → AutoDeleteAll=true.
+//	cfg.Cleanup.Auto         → AutoDeleteAll=true.
+//	--yes (and !noCleanup)   → AutoDeleteAll=true, PerVersion=false,
+//	                          NonInteractive=false. So a non-interactive
+//	                          run still makes progress without hanging
+//	                          on an unserviced prompt.
+//
+// PerVersion defaults to cfg.Cleanup.Prompt (true by default), and
+// Prefiltered is whatever --cleanup-version passed.
+func resolveCleanupConfig(noCleanup, autoCleanup, yes bool, cleanupVersions []semver.Version, cfg config.CleanupConfig) cleanupConfig {
+	out := cleanupConfig{
+		NonInteractive: noCleanup,
+		PerVersion:     cfg.Prompt,
+		Prefiltered:    cleanupVersions,
+	}
+	switch {
+	case noCleanup:
+		// Already set; no other knobs apply. --no-cleanup wins.
+	case autoCleanup:
+		out.AutoDeleteAll = true
+	case cfg.Auto:
+		out.AutoDeleteAll = true
+	}
+	if yes && !noCleanup {
+		// --yes implies auto-delete-all so non-interactive runs don't
+		// hang on an unserviced prompt. Guarded by !noCleanup so a user
+		// who explicitly says "never delete" doesn't have that contract
+		// silently overridden by a CI script's `-y` flag. See #57.
+		out.NonInteractive = false
+		out.AutoDeleteAll = true
+		out.PerVersion = false
+	}
+	return out
 }
 
 // cleanupResult summarizes what happened during a cleanup run. The

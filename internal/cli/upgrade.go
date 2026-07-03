@@ -79,37 +79,11 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	skipMigrate := noMigrate || !cfg.Packages.Migrate
 	_ = skipMigrate // referenced below in snapshot/restore sections
 
-	// Cleanup behavior toggles. Resolution order (highest first):
-	//   --no-cleanup           : never prompt, never delete
-	//   --cleanup              : auto-delete all (no all-or-nothing prompt)
-	//   --cleanup-version <v>  : delete only these versions
-	//   cfg.Cleanup.Auto       : auto-delete all (no prompt)
-	//   cfg.Cleanup.Prompt=false: skip the per-version confirm
-	//   default                : prompt, one y/N per cleanup action
-	//
-	// The cleanupConfig struct is what runCleanupPrompt consumes.
-	cleanupCfg := cleanupConfig{
-		NonInteractive: noCleanup,
-		PerVersion:     cfg.Cleanup.Prompt,
-		Prefiltered:    cleanupVersions,
-	}
-	switch {
-	case noCleanup:
-		// already set; no other knobs apply
-	case autoCleanup:
-		cleanupCfg.AutoDeleteAll = true
-		cleanupCfg.Prefiltered = cleanupVersions // combine with --cleanup-version if both set
-	case cfg.Cleanup.Auto:
-		cleanupCfg.AutoDeleteAll = true
-		cleanupCfg.Prefiltered = cleanupVersions
-	}
-	// --yes implies auto-delete-all so non-interactive runs don't hang.
-	if yes {
-		cleanupCfg.NonInteractive = false
-		cleanupCfg.AutoDeleteAll = true
-		cleanupCfg.PerVersion = false
-	}
-	_ = yes
+	// Resolve the cleanup behavior. The full precedence table lives
+	// on resolveCleanupConfig; the key contract is that --no-cleanup
+	// beats --yes ("never prompt, never delete" must not be silently
+	// overridden by a CI script's -y). See #57.
+	cleanupCfg := resolveCleanupConfig(noCleanup, autoCleanup, yes, cleanupVersions, cfg.Cleanup)
 
 	// From here on, anything that mutates disk in a way that needs
 	// replay-by-sentinel bookkeeping is wrapped in a sentinel lifecycle.
