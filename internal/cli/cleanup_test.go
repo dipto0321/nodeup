@@ -179,10 +179,16 @@ func TestCleanupPrompt_YesDeletesAll(t *testing.T) {
 }
 
 func TestCleanupPrompt_PerVersionConfirm(t *testing.T) {
-	// With PerVersion=true, "y" to all-or-nothing still requires a
-	// per-version "y" to actually delete. User says y, y, n — only
-	// the first should be deleted.
-	streams, _ := newCleanupIO("y\ny\nn\n")
+	// Once the user has explicitly opted into mass-delete at the
+	// all-or-nothing prompt ("y"), that confirmation is sticky: no
+	// per-version re-prompt, no chance for a non-`y` default to
+	// silently override the explicit `y` from the previous step.
+	// This is the regression test for #76 — the pre-fix behavior
+	// was: `y` at all-or-nothing, then `Delete v18.20.4? [y/N]`,
+	// then `Delete v20.18.0? [y/N]`, with empty/non-y input silently
+	// skipping each version. The user reported live: they answered
+	// `y` once, then `fnm list` showed nothing was deleted.
+	streams, _ := newCleanupIO("y\n")
 	mgr := &stubManager{name: "fnm"}
 	cfg := cleanupConfig{PerVersion: true}
 
@@ -194,17 +200,69 @@ func TestCleanupPrompt_PerVersionConfirm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result.Deleted) != 1 {
-		t.Errorf("expected 1 deleted, got %v", result.Deleted)
+	if len(result.Deleted) != 2 {
+		t.Errorf("expected 2 deleted (y at all-or-nothing is sticky), got %v", result.Deleted)
 	}
-	if len(result.Skipped) != 1 {
-		t.Errorf("expected 1 skipped, got %v", result.Skipped)
+	if len(result.Skipped) != 0 {
+		t.Errorf("expected 0 skipped, got %v", result.Skipped)
 	}
-	if result.Deleted[0].String() != "18.20.4" {
-		t.Errorf("expected 18.20.4 deleted, got %s", result.Deleted[0])
+	if len(mgr.uninstalls) != 2 {
+		t.Errorf("expected 2 Uninstall calls, got %v", mgr.uninstalls)
 	}
-	if result.Skipped[0].String() != "20.18.0" {
-		t.Errorf("expected 20.18.0 skipped, got %s", result.Skipped[0])
+}
+
+// TestCleanupPrompt_DeleteAllSkipsPerVersionPrompt is the explicit
+// regression test for issue #76. It pins that when the user
+// answers `y` at the all-or-nothing prompt, NO per-version
+// `Delete vX? [y/N]` prompt appears afterward — and crucially,
+// that a short input stream (e.g. just `y\n` with no further
+// answers) still results in every candidate being deleted.
+//
+// The pre-fix behavior was: `y\n` at the all-or-nothing prompt
+// set `decision.deleteAll = true` and `toOffer = candidates`, but
+// the per-version loop unconditionally fired `promptPerVersion`
+// for each candidate because `cfg.PerVersion` defaulted to true
+// from `cfg.Cleanup.Prompt`. Empty / non-`y` input to those
+// per-version prompts fell into the `default:` branch of
+// `promptPerVersion` and each version landed in `result.Skipped`
+// — so a user who answered `y` once saw nothing deleted, with no
+// visible error. The fix sets `cfg.PerVersion = false` for the
+// per-version loop once a higher-level confirmation has been
+// recorded (all-or-nothing `deleteAll` / `deleteOne`, `--cleanup`,
+// `--cleanup-version`, `--yes`, or `cfg.Cleanup.Auto`). The
+// only path that keeps `cfg.PerVersion = true` is the
+// ForcePerVersion downgrade (#58), which is set when
+// `Manager.Current()` errors — see TestCleanupPrompt_ForcePerVersion*
+// for that.
+func TestCleanupPrompt_DeleteAllSkipsPerVersionPrompt(t *testing.T) {
+	// Two candidates. Only `y\n` is supplied — no per-version
+	// answers. Pre-fix this would result in 0 deletes (every
+	// candidate skipped due to the `default:` fallback in
+	// `promptPerVersion`); post-fix it must result in 2 deletes.
+	streams, out := newCleanupIO("y\n")
+	mgr := &stubManager{name: "fnm"}
+	cfg := cleanupConfig{PerVersion: true} // would normally re-prompt
+
+	candidates := []semver.Version{
+		mustVer(t, "18.20.4"),
+		mustVer(t, "20.18.0"),
+	}
+	result, err := runCleanupPrompt(cfg, nil, candidates, semver.Version{}, mgr, streams)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Deleted) != 2 {
+		t.Fatalf("deleteAll must skip per-version prompt: expected 2 deleted, got %d (%v)", len(result.Deleted), result.Deleted)
+	}
+	if len(result.Skipped) != 0 {
+		t.Errorf("deleteAll must skip per-version prompt: expected 0 skipped, got %d (%v)", len(result.Skipped), result.Skipped)
+	}
+	// The output must NOT contain a per-version `Delete v` prompt
+	// — that's the visible signal that we re-prompted. Only the
+	// all-or-nothing prompt + the per-version "Deleted" lines
+	// should be present.
+	if strings.Contains(out.String(), "Delete v") {
+		t.Errorf("deleteAll must skip per-version prompt; output contains a 'Delete v' prompt:\n%s", out.String())
 	}
 }
 
@@ -228,9 +286,12 @@ func TestCleanupPrompt_NoSkips(t *testing.T) {
 
 func TestCleanupPrompt_SpecificVersion(t *testing.T) {
 	// User picks "20.18.0" by typing it. We should delete only that one.
+	// Note: with PerVersion=true (the default), the explicit
+	// specific-version pick is itself the per-version confirmation
+	// — no further `Delete v20.18.0? [y/N]` re-prompt. See #76.
 	streams, _ := newCleanupIO("20.18.0\n")
 	mgr := &stubManager{name: "fnm"}
-	cfg := cleanupConfig{PerVersion: false} // no per-version confirm
+	cfg := cleanupConfig{PerVersion: true} // explicit pick is sticky
 
 	candidates := []semver.Version{
 		mustVer(t, "18.20.4"),
