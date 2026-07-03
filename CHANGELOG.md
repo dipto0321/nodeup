@@ -440,6 +440,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   AllowedManagerNames ↔ All() parity and IsAllowedManagerName
   behaviour (incl. traversal payloads, case-fold negativity, and
   near-miss strings). Closes #51.
+- `nodeup-npm/scripts/install.js`: verify the downloaded binary
+  archive against the SHA256 published in the release's
+  `checksums.txt` before extracting. Pre-fix, the install script
+  trusted whatever bytes came back from `github.com` /
+  `objects.githubusercontent.com` and wrote them straight to
+  `./bin/nodeup` — a TLS-stripping proxy, compromised CDN, or
+  manipulated DNS could swap in an attacker-controlled binary
+  and the user would have no way to know. Two independent fixes
+  in this change:
+  - **Redirect allowlist** (`followHops`): the one-hop redirect
+    from `github.com` to `objects.githubusercontent.com` is now
+    validated against `ALLOWED_REDIRECT_HOSTS` (`Set(['objects.
+    githubusercontent.com'])`). Any redirect to a non-allowlisted
+    host aborts the install with the offending hostname named.
+    `MAX_REDIRECT_HOPS = 2` (the known GitHub chain length)
+    bounds the walker; longer chains throw before any byte is
+    written to disk.
+  - **SHA256 verification**: `fetchExpectedHash(repo, tag,
+    archiveName)` downloads `checksums.txt` first (fail fast —
+    no point pulling a multi-MB archive we can't verify).
+    `downloadTo(url, destPath)` then streams the archive to disk
+    while piping it through `crypto.createHash('sha256')`, so
+    the hash is computed as the bytes arrive (no second pass
+    over the file). On mismatch, the half-saved archive is
+    unlinked before the script dies — a forensic investigation
+    of the failing install doesn't leave the
+    (potentially attacker-controlled) bytes sitting in tmp.
+  - `parseChecksumsTxt` accepts both GoReleaser's `<hash>  <filename>`
+    (two-space) shape and the `sha256sum -b` / `--tag` `<hash>
+    *<filename>` (binary-mode `*`) shape, with or without space
+    between the `*` and the filename. Comment lines and blank
+    lines are skipped; malformed lines are silently dropped.
+  - `nodeup-npm/scripts/install_test.js` (new file): 12 pure-
+    helper smoke tests covering `parseChecksumsTxt` (two-space,
+    binary-mode-`*`, malformed-line skipping, basename keying),
+    `followHops` (allow-listed redirect, off-CDN redirect
+    rejection, hop-count ceiling, missing-Location-header
+    rejection, unexpected-status rejection), and the end-to-end
+    integrity path (missing-archive-in-checksums error names
+    both the offender and the available set, hash mismatch is
+    detected, streaming hash equals direct hash). Tests run
+    via `node nodeup-npm/scripts/install_test.js` and exit 0
+    on green; on failure they print the offending case and exit
+    1. No JS test framework is introduced (the project already
+    has a 1-line `require('tar')` check that didn't justify
+    pulling in jest/mocha/vitest either; see #63). Closes #64.
 
 ## [0.0.0] - 2024-07-01
 
