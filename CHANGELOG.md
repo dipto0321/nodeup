@@ -146,6 +146,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for the full rationale.
 
 ### Fixed
+- `internal/detector/n.go`: `N.Current()` no longer shells out
+  to `n current` — an undocumented subcommand that upstream
+  `tj/n` resolves as a label equivalent to "latest" and
+  side-effects a download of the newest available Node.js
+  version. Pre-fix, every `Current()` invocation would have
+  silently mutated the user's machine by running the
+  catch-all arm `install "$1"` for "current", which fetches
+  the latest semver from nodejs.org, downloads the tarball,
+  extracts it, and activates it. Since callers treat
+  `Current()` errors as "active version unknown, don't
+  exclude it" (the safe-by-convention default per the
+  `Manager` interface doc), every n-using machine ran the
+  cleanup step without active-version exclusion on every
+  invocation — and would now also have the latest version
+  installed behind the user's back. The replacement reads
+  the active version off `$N_PREFIX/bin/node --version`
+  instead: n's `activate` function copies the active
+  node binary into that path, so its `--version` is the
+  authoritative source for "what's active". Side-effect-free,
+  matches every supported n install, and the parser
+  (`parseNNodeVersion`) handles both `vX.Y.Z` and bare
+  `X.Y.Z` shapes. Doc comments at the top of `n.go` and
+  the mutation-methods block both spell out the "do not
+  use `n current`" reasoning. New tests in `n_test.go` pin
+  the new path (`TestN_Current_InvokesNodeVersionNotNCurrent`
+  explicitly fails if the literal `n current` request re-
+  appears), parser cases (`TestParseNNodeVersion_*`), and
+  error propagation (`TestN_Current_PropagatesRunShellError`,
+  `TestN_Current_PropagatesParseError`). The pre-fix tests
+  (`TestParseNCurrent_*`, `TestNCurrent_InvokesShell`) are
+  deleted — they codified the buggy behavior. Closes #59.
 - `internal/cli` (`upgrade.go`): `Manager.Current()` failure no
   longer leaves the active Node.js version unprotected from
   cleanup deletion. Pre-fix, the post-upgrade cleanup step

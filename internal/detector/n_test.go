@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/Masterminds/semver/v3"
@@ -530,10 +531,18 @@ func TestN_Uninstall_PropagatesError(t *testing.T) {
 	}
 }
 
-// --- parseNCurrent ----------------------------------------------------
+// --- parseNNodeVersion (the new Current() parser) ---------------------
+//
+// These tests cover the parser that reads `<N_PREFIX>/bin/node
+// --version` output. The pre-fix code parsed `n current` output,
+// which no longer exists in the upstream-detector flow — that
+// subcommand was undocumented and side-effecting. See #59.
 
-func TestParseNCurrent_Bare(t *testing.T) {
-	v, err := parseNCurrent("22.11.0\n")
+func TestParseNNodeVersion_VPrefixedReal(t *testing.T) {
+	// Real observed output of `node --version`:
+	//   $ node --version
+	//   v22.11.0
+	v, err := parseNNodeVersion("v22.11.0\n")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -542,8 +551,10 @@ func TestParseNCurrent_Bare(t *testing.T) {
 	}
 }
 
-func TestParseNCurrent_WithPrefix(t *testing.T) {
-	v, err := parseNCurrent("v22.11.0\n")
+func TestParseNNodeVersion_Bare(t *testing.T) {
+	// Defensive: some node builds / forks may omit the "v"
+	// prefix. The parser must still produce a valid semver.
+	v, err := parseNNodeVersion("22.11.0\n")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -552,23 +563,55 @@ func TestParseNCurrent_WithPrefix(t *testing.T) {
 	}
 }
 
-func TestParseNCurrent_Empty(t *testing.T) {
-	_, err := parseNCurrent("")
+func TestParseNNodeVersion_LeadingTrailingWhitespace(t *testing.T) {
+	v, err := parseNNodeVersion("   v22.11.0   \n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v.String() != "22.11.0" {
+		t.Errorf("got %q, want %q", v.String(), "22.11.0")
+	}
+}
+
+func TestParseNNodeVersion_Empty(t *testing.T) {
+	_, err := parseNNodeVersion("")
 	if err == nil {
 		t.Error("expected error on empty input")
 	}
 }
 
-func TestNCurrent_InvokesShell(t *testing.T) {
+func TestParseNNodeVersion_Unparseable(t *testing.T) {
+	// Anything other than a bare semver (with or without "v")
+	// must error, not silently return zero value.
+	_, err := parseNNodeVersion("not-a-version\n")
+	if err == nil {
+		t.Error("expected error on unparseable input, got nil")
+	}
+}
+
+// --- N.Current() tests ------------------------------------------------
+//
+// These tests pin that Current() (a) does NOT call `n current`
+// — the silent-download foot-gun — and (b) does call the active
+// node binary at $N_PREFIX/bin/node --version. The fixture stubs
+// `runShell` so we can assert the EXACT shell-out string without
+// needing a real n install in CI.
+
+func TestN_Current_InvokesNodeVersionNotNCurrent(t *testing.T) {
+	// The bug: pre-fix code called `n current`, which falls
+	// through to upstream's default dispatch arm and downloads
+	// the latest Node. A regression that re-introduced that
+	// would be caught HERE: the literal `n current` request is
+	// the one thing this test asserts MUST NOT appear.
 	var captured string
 	withStubShell(t,
 		nil,
 		func(req string) (*platform.RunResult, error) {
 			captured = req
-			if req != "n current" {
-				t.Errorf("unexpected runShell call: %q", req)
+			if req == "n current" {
+				t.Fatalf("Current() must not invoke `n current` — it side-effects a download; got %q", req)
 			}
-			return &platform.RunResult{Stdout: "22.11.0\n"}, nil
+			return &platform.RunResult{Stdout: "v22.11.0\n"}, nil
 		},
 	)
 
@@ -580,6 +623,44 @@ func TestNCurrent_InvokesShell(t *testing.T) {
 		t.Errorf("got %q, want %q", got.String(), "22.11.0")
 	}
 	if captured == "" {
-		t.Error("expected n current to be invoked")
+		t.Error("expected a runShell call (the new path resolves <N_PREFIX>/bin/node --version)")
+	}
+	// Sanity: the captured request should end in `--version`
+	// (we don't pin the absolute path because N_PREFIX is
+	// platform-dependent — /usr/local on Linux/macOS, whatever
+	// the test env sets, etc.).
+	if !strings.HasSuffix(captured, "--version") {
+		t.Errorf("captured request = %q, want one that ends in `--version`", captured)
+	}
+}
+
+func TestN_Current_PropagatesRunShellError(t *testing.T) {
+	// If <N_PREFIX>/bin/node is missing or fails to exec, we
+	// must propagate the error so callers treat Current() as
+	// "active version unknown" — the safe default.
+	wantErr := errors.New("simulated missing node binary")
+	withStubShell(t, nil, func(req string) (*platform.RunResult, error) {
+		return nil, wantErr
+	})
+
+	_, err := NewN().Current()
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, wantErr) {
+		t.Errorf("error %v should wrap %v", err, wantErr)
+	}
+}
+
+func TestN_Current_PropagatesParseError(t *testing.T) {
+	// The shell-out succeeded but the body is unparseable. We
+	// must return an error, not the zero semver.Version.
+	withStubShell(t, nil, func(req string) (*platform.RunResult, error) {
+		return &platform.RunResult{Stdout: ""}, nil
+	})
+
+	_, err := NewN().Current()
+	if err == nil {
+		t.Error("expected parsing error from blank --version output, got nil")
 	}
 }
