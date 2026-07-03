@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/Masterminds/semver/v3"
@@ -52,7 +51,7 @@ func runSnapshot(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("get current version: %w", err)
 	}
 
-	if err := packages.Snapshot(context.Background(), m.Name(), version); err != nil {
+	if err := packages.Snapshot(cmd.Context(), m.Name(), version); err != nil {
 		return fmt.Errorf("snapshot failed: %w", err)
 	}
 
@@ -138,7 +137,7 @@ the "interrupted upgrade" warning).`,
 }
 
 func runRestore(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
+	ctx := cmd.Context()
 	fromPath, _ := cmd.Flags().GetString("from")
 
 	// runRestore doubles as the "replay the upgrade-in-progress sentinel"

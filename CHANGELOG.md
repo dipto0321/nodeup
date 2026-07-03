@@ -238,6 +238,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (omits-on-nil current/error), the table renderer (empty state,
   mixed empty/error/success), and the `--manager` resolution
   helper. Closes #45.
+- `internal/cli/packages.go`: `runSnapshot` and `runRestore` now
+  pass `cmd.Context()` to `packages.Snapshot` / `packages.Restore`
+  (and to the `--from` branch via the same `ctx` local) instead of
+  `context.Background()`. Both are cobra `RunE` functions with a
+  live context available — using `context.Background()` meant
+  Ctrl-C during `nodeup packages snapshot` or `nodeup packages
+  restore` could not cancel the in-flight `npm ls -g` / `npm
+  install -g` subprocess, so the child process kept running after
+  the user aborted. The fix is the same contextcheck violation
+  `internal/cli/upgrade.go` and `check.go` already addressed as
+  part of #48 — `packages.go` was the last `RunE` file in the tree
+  still using `context.Background()`. The unused `"context"`
+  import is dropped. Closes #49.
 
 ## [0.0.0] - 2024-07-01
 
