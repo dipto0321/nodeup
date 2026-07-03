@@ -168,8 +168,8 @@ func parseNVersion(stdout string) (string, error) {
 //
 // Note: n does not have a "system" sentinel — we don't filter
 // for one.
-func (n *N) ListInstalled() ([]semver.Version, error) {
-	res, err := runShell(context.Background(), "n", "ls")
+func (n *N) ListInstalled(ctx context.Context) ([]semver.Version, error) {
+	res, err := runShell(ctx, "n", "ls")
 	if err != nil {
 		return nil, fmt.Errorf("n ls: %w", err)
 	}
@@ -365,7 +365,7 @@ func nPrefix() string {
 // fails, we return an error — the caller treats that as
 // "active version unknown, don't exclude it" (the safe-by-
 // convention default per the Manager interface doc).
-func (n *N) Current() (semver.Version, error) {
+func (n *N) Current(ctx context.Context) (semver.Version, error) {
 	prefix := nPrefix()
 	if prefix == "" {
 		return semver.Version{}, errors.New("n: cannot resolve N_PREFIX or /usr/local")
@@ -376,7 +376,7 @@ func (n *N) Current() (semver.Version, error) {
 	// (the runShell error message will already name the missing
 	// path), rather than paying for a stat that we'd race
 	// against a concurrent uninstall.
-	res, err := runShell(context.Background(), nodeBin, "--version")
+	res, err := runShell(ctx, nodeBin, "--version")
 	if err != nil {
 		return semver.Version{}, fmt.Errorf("n current: %s --version: %w", nodeBin, err)
 	}

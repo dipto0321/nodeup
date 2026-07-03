@@ -308,7 +308,7 @@ func TestNodenv_ListInstalled_Success(t *testing.T) {
 		},
 	)
 
-	got, err := NewNodenv().ListInstalled()
+	got, err := NewNodenv().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestNodenv_ListInstalled_EmptyStdout(t *testing.T) {
 			return &platform.RunResult{Stdout: ""}, nil
 		},
 	)
-	got, err := NewNodenv().ListInstalled()
+	got, err := NewNodenv().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestNodenv_ListInstalled_RunShellError(t *testing.T) {
 		},
 	)
 
-	_, err := NewNodenv().ListInstalled()
+	_, err := NewNodenv().ListInstalled(t.Context())
 	if err == nil {
 		t.Fatal("expected error from runShell failure, got nil")
 	}
@@ -611,7 +611,7 @@ func TestNodenvCurrent_InvokesShell(t *testing.T) {
 		},
 	)
 
-	got, err := NewNodenv().Current()
+	got, err := NewNodenv().Current(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

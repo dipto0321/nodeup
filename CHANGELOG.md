@@ -745,6 +745,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   action tag would silently pull unreviewed code into
   `release.yml` (which runs with `contents: write` and
   handles publish secrets). Closes #67.
+- `internal/detector` `Manager` interface now takes a
+  `context.Context` as the first parameter on `ListInstalled`
+  and `Current`. Both methods were defined without `ctx`
+  when the interface was first laid out, and the omission
+  became user-visible when the post-upgrade cleanup feature
+  (PR #56 / issue #41) added `Current()` and shipped across
+  all 8 manager implementations: a Ctrl-C mid-`nodeup
+  upgrade` would still wait for the underlying `manager list`
+  / `fnm list` / `nvm current` subprocess to finish before
+  returning, because cancellation had no path into the read
+  paths. The 8 concrete implementations (`fnm`, `nvm`,
+  `volta`, `asdf`, `mise`, `n`, `nodenv`, `nvm-windows`)
+  plumb the new `ctx` into their existing `runShell` /
+  `runScript` calls (both already ctx-aware via
+  `internal/platform/shell.go`). The 6 production call-sites
+  in `internal/cli/{check,list,upgrade,packages}.go` now
+  pass `cmd.Context()` (or, for the new
+  `getCurrentVersion(ctx, m)` helper, the caller's ctx) so
+  the `contextcheck` linter is satisfied. The 3 mock/stub
+  Manager types (`fakeManager`, `listTestStubManager`,
+  `stubManager`) take a discarded `_ context.Context`
+  parameter; their bodies are unchanged since they don't do
+  real I/O. The 39 test call-sites across the per-manager
+  `*_test.go` files now pass `t.Context()` (Go 1.24 added
+  this; the project's `go.mod` is on `go 1.24`). Out of scope
+  (per the issue title): the remaining `Manager` methods
+  (`Install`, `Uninstall`, `Use`, `SetDefault`,
+  `GlobalNpmPrefix`, `Version`) keep their no-ctx signatures
+  for now — most have a pre-existing cancellation story (the
+  platform lock + interrupted-upgrade sentinel from #46)
+  and a follow-up can plumb `ctx` through them when the
+  call-sites warrant it. Closes #53.
 
 ## [0.0.0] - 2024-07-01
 

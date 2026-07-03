@@ -217,7 +217,7 @@ func TestFNM_ListInstalled_Success(t *testing.T) {
 		},
 	)
 
-	got, err := NewFNM().ListInstalled()
+	got, err := NewFNM().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestFNM_ListInstalled_RunShellError(t *testing.T) {
 		return nil, wantErr
 	})
 
-	_, err := NewFNM().ListInstalled()
+	_, err := NewFNM().ListInstalled(t.Context())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -354,7 +354,7 @@ func TestFNMCurrent_InvokesShell(t *testing.T) {
 		},
 	)
 
-	got, err := NewFNM().Current()
+	got, err := NewFNM().Current(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -96,7 +96,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	// (one active Node per machine — typically one manager owns it).
 	var active *string
 	for _, m := range selected {
-		versions, err := m.ListInstalled()
+		versions, err := m.ListInstalled(cmd.Context())
 		entry := installedEntryJSON{Manager: m.Name()}
 		if err != nil {
 			entry.Error = err.Error()
@@ -115,7 +115,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		// answers. This is best-effort: managers that don't implement
 		// Current() return an error, which we silently drop.
 		if active == nil {
-			if cur, cerr := m.Current(); cerr == nil {
+			if cur, cerr := m.Current(cmd.Context()); cerr == nil {
 				s := cur.String()
 				active = &s
 			}

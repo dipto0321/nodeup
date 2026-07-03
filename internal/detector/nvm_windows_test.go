@@ -393,7 +393,7 @@ func TestNVMWindows_ListInstalled_Success(t *testing.T) {
 		},
 	)
 
-	got, err := NewNVMWindows().ListInstalled()
+	got, err := NewNVMWindows().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -423,7 +423,7 @@ func TestNVMWindows_ListInstalled_EmptyStdout(t *testing.T) {
 			return &platform.RunResult{Stdout: ""}, nil
 		},
 	)
-	got, err := NewNVMWindows().ListInstalled()
+	got, err := NewNVMWindows().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -446,7 +446,7 @@ func TestNVMWindows_ListInstalled_RunShellError(t *testing.T) {
 		},
 	)
 
-	_, err := NewNVMWindows().ListInstalled()
+	_, err := NewNVMWindows().ListInstalled(t.Context())
 	if err == nil {
 		t.Fatal("expected error from runShell failure, got nil")
 	}
@@ -651,7 +651,7 @@ func TestNVMWindows_CurrentReturnsSentinel(t *testing.T) {
 	// cleanup prompt treats the error as "active version unknown"
 	// and proceeds without exclusion — so returning the sentinel
 	// here is the right behavior.
-	_, err := NewNVMWindows().Current()
+	_, err := NewNVMWindows().Current(t.Context())
 	if !errors.Is(err, ErrNVMWindowsNotImplemented) {
 		t.Errorf("Current() err = %v, want ErrNVMWindowsNotImplemented", err)
 	}

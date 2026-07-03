@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -47,7 +48,7 @@ func runSnapshot(cmd *cobra.Command, args []string) error {
 	}
 
 	m := installed.Found[0]
-	version, err := getCurrentVersion(m)
+	version, err := getCurrentVersion(cmd.Context(), m)
 	if err != nil {
 		return fmt.Errorf("get current version: %w", err)
 	}
@@ -60,8 +61,8 @@ func runSnapshot(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func getCurrentVersion(m detector.Manager) (semver.Version, error) {
-	versions, err := m.ListInstalled()
+func getCurrentVersion(ctx context.Context, m detector.Manager) (semver.Version, error) {
+	versions, err := m.ListInstalled(ctx)
 	if err != nil {
 		return semver.Version{}, err
 	}

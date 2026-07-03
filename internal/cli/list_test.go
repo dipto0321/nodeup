@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -50,14 +51,14 @@ func (s *listTestStubManager) SetDefault(semver.Version) error                { 
 func (s *listTestStubManager) GlobalNpmPrefix(semver.Version) (string, error) { return "", nil }
 func (s *listTestStubManager) Uninstall(semver.Version) error                 { return nil }
 
-func (s *listTestStubManager) ListInstalled() ([]semver.Version, error) {
+func (s *listTestStubManager) ListInstalled(_ context.Context) ([]semver.Version, error) {
 	if s.installedErr != nil {
 		return nil, s.installedErr
 	}
 	return s.installed, nil
 }
 
-func (s *listTestStubManager) Current() (semver.Version, error) {
+func (s *listTestStubManager) Current(_ context.Context) (semver.Version, error) {
 	if s.currentErr != nil {
 		return semver.Version{}, s.currentErr
 	}

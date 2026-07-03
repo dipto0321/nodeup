@@ -207,8 +207,8 @@ func parseNVMWindowsVersion(stdout string) (string, error) {
 //
 // There is no "system" sentinel line (unlike nodenv) — nvm-windows
 // is exclusively a managed install.
-func (n *NVMWindows) ListInstalled() ([]semver.Version, error) {
-	res, err := runShell(context.Background(), "nvm", "list")
+func (n *NVMWindows) ListInstalled(ctx context.Context) ([]semver.Version, error) {
+	res, err := runShell(ctx, "nvm", "list")
 	if err != nil {
 		return nil, fmt.Errorf("nvm list: %w", err)
 	}
@@ -327,6 +327,6 @@ func (n *NVMWindows) GlobalNpmPrefix(ver semver.Version) (string, error) {
 // sentinel error lets the upgrade prompt treat the active version
 // as unknown and proceed without excluding it from the cleanup
 // candidates.
-func (n *NVMWindows) Current() (semver.Version, error) {
+func (n *NVMWindows) Current(_ context.Context) (semver.Version, error) {
 	return semver.Version{}, ErrNVMWindowsNotImplemented
 }

@@ -422,7 +422,7 @@ func TestNVM_ListInstalled_HappyPath(t *testing.T) {
 		fakeEntry{name: "v19.6.0", isDir: true},
 	}, nil)
 
-	got, err := NewNVM().ListInstalled()
+	got, err := NewNVM().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -443,7 +443,7 @@ func TestNVM_ListInstalled_NotFoundReturnsEmpty(t *testing.T) {
 	// os.ErrNotExist from the stub.
 	withStubListDir(t, nil, os.ErrNotExist)
 
-	got, err := NewNVM().ListInstalled()
+	got, err := NewNVM().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -459,7 +459,7 @@ func TestNVM_ListInstalled_PropagatesOtherError(t *testing.T) {
 	withStubNVMScript(t)
 	withStubListDir(t, nil, errSentinelForTest)
 
-	_, err := NewNVM().ListInstalled()
+	_, err := NewNVM().ListInstalled(t.Context())
 	if err == nil {
 		t.Fatal("expected error when listDir fails with non-NotExist")
 	}
@@ -474,7 +474,7 @@ func TestNVM_ListInstalled_NoNVMDir(t *testing.T) {
 	} else {
 		t.Setenv("HOME", "")
 	}
-	_, err := NewNVM().ListInstalled()
+	_, err := NewNVM().ListInstalled(t.Context())
 	if err == nil {
 		t.Error("expected error when NVM_DIR and HOME both empty")
 	}
@@ -602,7 +602,7 @@ func TestNVMCurrent_InvokesShell(t *testing.T) {
 	withStubNVMScript(t)
 	rec := withStubScript(t, "v22.11.0\n", nil)
 
-	got, err := NewNVM().Current()
+	got, err := NewNVM().Current(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -626,7 +626,7 @@ func TestNVMCurrent_PropagatesShellError(t *testing.T) {
 	withStubNVMScript(t)
 	withStubScript(t, "", errSentinelForTest)
 
-	_, err := NewNVM().Current()
+	_, err := NewNVM().Current(t.Context())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -645,7 +645,7 @@ func TestNVMCurrent_SystemIsError(t *testing.T) {
 	withStubNVMScript(t)
 	withStubScript(t, "system\n", nil)
 
-	_, err := NewNVM().Current()
+	_, err := NewNVM().Current(t.Context())
 	if err == nil {
 		t.Error("expected error when `nvm current` returns 'system'")
 	}

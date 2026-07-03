@@ -330,7 +330,7 @@ func TestVolta_ListInstalled_Success(t *testing.T) {
 	}
 	withStubListDir(t, entries, nil)
 
-	got, err := NewVolta().ListInstalled()
+	got, err := NewVolta().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -355,7 +355,7 @@ func TestVolta_ListInstalled_NoImageDir(t *testing.T) {
 	// Stub listDir to simulate ENOENT (real path doesn't exist).
 	withStubListDir(t, nil, os.ErrNotExist)
 
-	got, err := NewVolta().ListInstalled()
+	got, err := NewVolta().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("expected nil error for missing image dir, got %v", err)
 	}
@@ -383,7 +383,7 @@ func TestVolta_ListInstalled_ReadsExpectedPath(t *testing.T) {
 	}
 	t.Cleanup(func() { listDir = orig })
 
-	if _, err := NewVolta().ListInstalled(); err != nil {
+	if _, err := NewVolta().ListInstalled(t.Context()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want := filepath.Join(home, "tools", "image", "node")
@@ -401,7 +401,7 @@ func TestVolta_ListInstalled_ListDirError(t *testing.T) {
 	wantErr := errors.New("simulated readdir failure")
 	withStubListDir(t, nil, wantErr)
 
-	_, err := NewVolta().ListInstalled()
+	_, err := NewVolta().ListInstalled(t.Context())
 	if err == nil {
 		t.Fatal("expected error from listDir failure, got nil")
 	}
@@ -532,7 +532,7 @@ func TestVoltaCurrent_InvokesShell(t *testing.T) {
 		},
 	)
 
-	got, err := NewVolta().Current()
+	got, err := NewVolta().Current(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -310,7 +310,7 @@ func TestN_ListInstalled_Success(t *testing.T) {
 		},
 	)
 
-	got, err := NewN().ListInstalled()
+	got, err := NewN().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -341,7 +341,7 @@ func TestN_ListInstalled_EmptyStdout(t *testing.T) {
 		return &platform.RunResult{Stdout: ""}, nil
 	})
 
-	got, err := NewN().ListInstalled()
+	got, err := NewN().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -359,7 +359,7 @@ func TestN_ListInstalled_RunShellError(t *testing.T) {
 		return nil, wantErr
 	})
 
-	_, err := NewN().ListInstalled()
+	_, err := NewN().ListInstalled(t.Context())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -375,7 +375,7 @@ func TestN_ListInstalled_SkipsUnparseableLines(t *testing.T) {
 		return &platform.RunResult{Stdout: "node/20.11.1\nnode/latest\nnode/22.5.0\n"}, nil
 	})
 
-	got, err := NewN().ListInstalled()
+	got, err := NewN().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -615,7 +615,7 @@ func TestN_Current_InvokesNodeVersionNotNCurrent(t *testing.T) {
 		},
 	)
 
-	got, err := NewN().Current()
+	got, err := NewN().Current(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -643,7 +643,7 @@ func TestN_Current_PropagatesRunShellError(t *testing.T) {
 		return nil, wantErr
 	})
 
-	_, err := NewN().Current()
+	_, err := NewN().Current(t.Context())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -659,7 +659,7 @@ func TestN_Current_PropagatesParseError(t *testing.T) {
 		return &platform.RunResult{Stdout: ""}, nil
 	})
 
-	_, err := NewN().Current()
+	_, err := NewN().Current(t.Context())
 	if err == nil {
 		t.Error("expected parsing error from blank --version output, got nil")
 	}

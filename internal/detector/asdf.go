@@ -168,8 +168,8 @@ func parseASDFVersion(stdout string) (string, error) {
 //
 // ASDF does NOT have an nvm-style "system" sentinel — we don't filter
 // for one.
-func (a *ASDF) ListInstalled() ([]semver.Version, error) {
-	res, err := runShell(context.Background(), "asdf", "list", "nodejs")
+func (a *ASDF) ListInstalled(ctx context.Context) ([]semver.Version, error) {
+	res, err := runShell(ctx, "asdf", "list", "nodejs")
 	if err != nil {
 		return nil, fmt.Errorf("asdf list nodejs: %w", err)
 	}
@@ -333,8 +333,8 @@ func (a *ASDF) GlobalNpmPrefix(ver semver.Version) (string, error) {
 // We take the second token (the version column) and feed it to
 // semver.NewVersion. We treat "system" / "None" as errors so the
 // cleanup prompt doesn't try to exclude them.
-func (a *ASDF) Current() (semver.Version, error) {
-	res, err := runShell(context.Background(), "asdf", "current", "nodejs")
+func (a *ASDF) Current(ctx context.Context) (semver.Version, error) {
+	res, err := runShell(ctx, "asdf", "current", "nodejs")
 	if err != nil {
 		return semver.Version{}, fmt.Errorf("asdf current nodejs: %w", err)
 	}

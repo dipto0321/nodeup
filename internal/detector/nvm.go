@@ -175,7 +175,7 @@ func parseNVMVersion(stdout string) (string, error) {
 // Non-directory entries (e.g. the "lts" symlink that some nvm versions
 // drop here) are skipped. The literal name "system" is a sentinel for
 // the system Node and not a managed install, so we skip it too.
-func (n *NVM) ListInstalled() ([]semver.Version, error) {
+func (n *NVM) ListInstalled(ctx context.Context) ([]semver.Version, error) {
 	dir := nvmDir()
 	if dir == "" {
 		return nil, errors.New("nvm not detected: cannot resolve NVM_DIR or ~/.nvm")
@@ -356,12 +356,12 @@ func (n *NVM) GlobalNpmPrefix(v semver.Version) (string, error) {
 // is the system Node). We map "system" to an error so callers can
 // treat it as "no nvm-managed version is active" rather than
 // silently treating system as a managed version.
-func (n *NVM) Current() (semver.Version, error) {
+func (n *NVM) Current(ctx context.Context) (semver.Version, error) {
 	script, err := nvmScriptInvocation("current")
 	if err != nil {
 		return semver.Version{}, err
 	}
-	res, err := runScript(context.Background(), script)
+	res, err := runScript(ctx, script)
 	if err != nil {
 		return semver.Version{}, fmt.Errorf("nvm current: %w", err)
 	}

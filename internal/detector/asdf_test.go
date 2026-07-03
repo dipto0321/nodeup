@@ -264,7 +264,7 @@ func TestASDF_ListInstalled_Success(t *testing.T) {
 		},
 	)
 
-	got, err := NewASDF().ListInstalled()
+	got, err := NewASDF().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestASDF_ListInstalled_EmptyStdout(t *testing.T) {
 		return &platform.RunResult{Stdout: ""}, nil
 	})
 
-	got, err := NewASDF().ListInstalled()
+	got, err := NewASDF().ListInstalled(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -313,7 +313,7 @@ func TestASDF_ListInstalled_RunShellError(t *testing.T) {
 		return nil, wantErr
 	})
 
-	_, err := NewASDF().ListInstalled()
+	_, err := NewASDF().ListInstalled(t.Context())
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -519,7 +519,7 @@ func TestASDFCurrent_InvokesShell(t *testing.T) {
 		},
 	)
 
-	got, err := NewASDF().Current()
+	got, err := NewASDF().Current(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
