@@ -46,7 +46,14 @@ test: ## Run unit tests with race + coverage
 	@echo "Coverage report: $(COVERAGE_HTML)"
 
 .PHONY: lint
-lint: ## Run golangci-lint (must be installed: brew install golangci-lint)
+lint: ## Run golangci-lint (must match .github/workflows/ci.yml's pinned version)
+	@if ! command -v golangci-lint >/dev/null 2>&1; then \
+		echo "golangci-lint not installed."; \
+		echo "Install the version pinned in .github/workflows/ci.yml with:"; \
+		echo "  go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2"; \
+		echo "(or update both this Makefile and ci.yml together when bumping)."; \
+		exit 1; \
+	fi
 	golangci-lint run ./...
 
 .PHONY: fmt

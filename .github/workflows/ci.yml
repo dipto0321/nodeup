@@ -55,11 +55,17 @@ jobs:
           cache: true
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v8
         with:
           # Pin golangci-lint to a version built against Go >= 1.24.
           # When go.mod's `go` directive advances, bump this accordingly.
-          version: v1.64.8
+          #
+          # We track the v2 line (.golangci.yml targets the v2 schema
+          # via `version: "2"`). v2.12.2 matches the version Homebrew
+          # currently installs, so a contributor's local `make lint`
+          # result agrees byte-for-byte with CI. See #62 for why the
+          # v1 line was abandoned.
+          version: v2.12.2
           args: --timeout=5m
 
       - name: commitlint
