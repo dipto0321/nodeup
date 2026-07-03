@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -8,6 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/dipto0321/nodeup/internal/config"
+	"github.com/dipto0321/nodeup/internal/platform"
 )
 
 // newConfigCmd implements `nodeup config ...` subcommands.
@@ -123,6 +125,22 @@ func newConfigSetCmd() *cobra.Command {
 				return err
 			}
 
+			// Acquire the nodeup lock so two `nodeup config set`
+			// (or `config set` + `nodeup upgrade`) invocations can't
+			// race on read-modify-write of the config file. See #44.
+			configLock, err := platform.AcquireLock()
+			if err != nil {
+				if errors.Is(err, platform.ErrAlreadyLocked) {
+					return fmt.Errorf("refusing to edit config: %w\n  (another nodeup process holds the lock)", err)
+				}
+				return fmt.Errorf("acquire config lock: %w", err)
+			}
+			defer func() {
+				if rerr := configLock.Release(); rerr != nil {
+					fmt.Fprintf(cmd.OutOrStdout(), "Warning: failed to release config lock: %v\n", rerr)
+				}
+			}()
+
 			// Load the current file (or start from defaults if absent).
 			current, _, err := config.Load(path)
 			if err != nil {
@@ -173,6 +191,22 @@ to overwrite an existing file unless --force is passed.`,
 			if err != nil {
 				return err
 			}
+
+			// Acquire the nodeup lock so two `nodeup config init`
+			// invocations can't race on the existence-check /
+			// overwrite dance. See #44.
+			configLock, err := platform.AcquireLock()
+			if err != nil {
+				if errors.Is(err, platform.ErrAlreadyLocked) {
+					return fmt.Errorf("refusing to init config: %w\n  (another nodeup process holds the lock)", err)
+				}
+				return fmt.Errorf("acquire config lock: %w", err)
+			}
+			defer func() {
+				if rerr := configLock.Release(); rerr != nil {
+					fmt.Fprintf(cmd.OutOrStdout(), "Warning: failed to release config lock: %v\n", rerr)
+				}
+			}()
 
 			// Existence check is best-effort; we let Save do the real
 			// atomic-create dance.
