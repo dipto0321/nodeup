@@ -9,7 +9,7 @@
 // Detection priority (highest first):
 //  1. --manager CLI flag (caller-supplied)
 //  2. ~/.nodeup/config.yaml setting
-//  3. environment variables (NVM_DIR, FNM_DIR, VOLTA_HOME, ASDF_DIR, ...)
+//  3. environment variables (NVM_DIR, FNM_DIR, VOLTA_HOME, ASDF_DATA_DIR, ...)
 //  4. binary lookup on PATH
 //  5. well-known data directories
 //
