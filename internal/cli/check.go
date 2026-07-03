@@ -55,7 +55,10 @@ func runCheck(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("failed to load cached manifest: %w", err)
 		}
 	} else {
-		m, err = node.FetchManifest()
+		// Ctx-aware variant: Ctrl-C cancels an in-flight fetch and
+		// httpClient.Timeout bounds a hung nodejs.org response. See
+		// #48.
+		m, err = node.FetchManifestCtx(cmd.Context())
 		if err != nil {
 			return fmt.Errorf("failed to fetch manifest: %w", err)
 		}

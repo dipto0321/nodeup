@@ -156,7 +156,11 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	if offline {
 		manifest, err = node.LoadCached()
 	} else {
-		manifest, err = node.FetchManifest()
+		// Use the ctx-aware variant so Ctrl-C cancels an in-flight
+		// nodejs.org fetch. The package-level httpClient.Timeout (30s,
+		// set in dist.go) covers the case where nodejs.org simply
+		// hangs without ever acknowledging cancellation. See #48.
+		manifest, err = node.FetchManifestCtx(cmd.Context())
 	}
 	if err != nil {
 		return fmt.Errorf("fetch versions: %w", err)

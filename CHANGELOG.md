@@ -84,6 +84,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   copy to replay the migration (PR #29). `nodeup packages restore`
   accepts a `--from <snapshot-path>` flag for restoring from a
   non-default location, mirroring the sentinel's stored path.
+- `internal/node`: manifest fetch from nodejs.org gained an HTTP
+  timeout, context threading, retry-with-backoff for transient
+  failures, and atomic cache writes. Previously `FetchManifest`
+  called `http.Get(url)` against `http.DefaultClient`, which has no
+  timeout — a hung nodejs.org (or a corporate proxy that drops the
+  connection silently) could block `nodeup upgrade` / `nodeup check`
+  forever, with no way out except Ctrl-C (and even Ctrl-C had no
+  effect since no context was threaded through). The new
+  `FetchManifestCtx(ctx)` (the existing `FetchManifest()` is kept
+  as a `context.Background()`-using wrapper) builds the request via
+  `http.NewRequestWithContext`, uses a package-level
+  `http.Client{Timeout: 30s}`, and retries up to 3 times with
+  exponential backoff (200ms, 400ms, 800ms, capped at 2s) for
+  network errors and 5xx / 408 / 429 responses. Permanent 4xx errors
+  are not retried. `saveToCache` now writes the data and meta files
+  via temp-file + rename so two concurrent `nodeup` invocations
+  refreshing the cache cannot leave a mismatched state. The cache
+  helpers (`loadFromCacheAt`, `saveToCacheAt`) take explicit
+  `cachePaths` so the new tests can drive them hermetically. Both
+  CLI callers (`upgrade.go`, `check.go`) now pass
+  `cmd.Context()` through. Closes #48.
 - Cross-platform path handling: `internal/platform.QuotePath` now
   enforces consistent shell-quoting across all `RunShell` callsites,
   so paths containing spaces (e.g. `C:\Users\Dipto Karmakar\...`)
