@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -330,6 +331,84 @@ func TestNVM_Version_NoNVMScript(t *testing.T) {
 	t.Setenv("NVM_DIR", t.TempDir())
 	if _, err := NewNVM().Version(); err == nil {
 		t.Error("expected error when nvm cannot be located")
+	}
+}
+
+// TestNVM_Version_NVMDirShellInjectionIsNeutralized is the regression
+// test for #43. Even when NVM_DIR contains shell metacharacters like
+// `$(touch …)` or backticks, the script that runs through runScript
+// must keep those characters LITERAL — bash must not perform command
+// substitution inside the single-quoted region that QuotePath emits.
+//
+// The test sets NVM_DIR to a string that contains a command-substitution
+// payload but does NOT require a real directory to exist (nvm.sh is
+// stubbed via runScript), captures the script that NVM.Version() builds,
+// and asserts that the payload characters appear inside a single-quoted
+// span rather than as bare command substitution.
+func TestNVM_Version_NVMDirShellInjectionIsNeutralized(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("cmd.exe unquote rules differ; QuotePath's Windows branch is covered in internal/platform tests")
+	}
+
+	// Pick a payload directory NAME that QuotePath must absorb
+	// verbatim — we never create it on disk, but nvmDir()/nvmScriptPath()
+	// only return the strings, never validate them, and the runScript
+	// stub returns canned stdout without touching the filesystem.
+	//
+	// The bytes `$(touch /tmp/PWND_BY_NVM_DIR)` are just path bytes,
+	// not actual shell substitution. NVM_DIR is set to a path that
+	// looks like `/tmp/<tmpdir>/$(touch /tmp/PWND_BY_NVM_DIR)`.
+	maliciousDirName := "$(touch /tmp/PWND_BY_NVM_DIR)"
+	t.Setenv("NVM_DIR", "/tmp/anything-at-all/"+maliciousDirName)
+	// Make sure no leftover sentinel from a previous run.
+	_ = os.Remove("/tmp/PWND_BY_NVM_DIR")
+	defer os.Remove("/tmp/PWND_BY_NVM_DIR")
+
+	rec := withStubScript(t, "0.40.5\n", nil)
+	if _, err := NewNVM().Version(); err != nil {
+		t.Fatalf("Version(): %v", err)
+	}
+
+	// The script MUST contain the payload inside single quotes, not
+	// as bare `$(touch …)`. Otherwise bash would expand it the moment
+	// the script runs in production.
+	script := rec.script
+
+	// 1. The malicious substring must be inside a single-quoted span.
+	//    nvmScriptPath() appends `/nvm.sh`, so the full quoted form
+	//    is `…/$(touch /tmp/PWND_BY_NVM_DIR)/nvm.sh`. We find the
+	//    payload's byte offset and walk backwards/forward to the
+	//    nearest `'` on each side; both must surround the payload,
+	//    proving it lives inside a single-quoted region.
+	idx := strings.Index(script, "$(touch")
+	if idx < 0 {
+		t.Fatalf("payload substring %q not present in script — the malicious NVM_DIR was not used. script=%q",
+			"$(touch", script)
+	}
+	leftQuote := strings.LastIndex(script[:idx], "'")
+	rightQuote := strings.Index(script[idx:], "'")
+	if leftQuote < 0 || rightQuote < 0 {
+		t.Fatalf("payload not surrounded by single quotes on both sides. leftQuote=%d rightQuote=%d script=%q",
+			leftQuote, rightQuote, script)
+	}
+	// If the script also contains double-quotes around the payload,
+	// bash would still perform command-substitution inside them.
+	// We tolerate overall double-quotes elsewhere in the script;
+	// the regression check is specifically that the payload bytes are
+	// not in an unquoted region.
+
+	// 2. The payload substring `$(touch` (if present in the script
+	//    as bare bytes) must appear only inside a single-quoted span.
+	//    If QuotePath passed it through bare, that's a regression.
+	if idx := strings.Index(script, "$(touch"); idx >= 0 {
+		// Count single quotes BEFORE the payload occurrence: odd
+		// count means we are inside a single-quoted span.
+		upTo := script[:idx]
+		singleQuoteCount := strings.Count(upTo, "'")
+		if singleQuoteCount%2 == 0 {
+			t.Errorf("payload substring %q at offset %d is OUTSIDE single quotes — bash would expand it. script=%q",
+				"$(touch", idx, script)
+		}
 	}
 }
 

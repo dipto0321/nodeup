@@ -139,6 +139,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carrying the user's globals forward to the new default exactly
   once. Added a regression test pinning the
   `RestoreFromSnapshot`-reads-source-path contract. Closes #42.
+- `internal/platform/shell.go` (`QuotePath`): on POSIX the quoting
+  rule for paths embedded in `bash -c` scripts now uses **single
+  quotes** with `'\''` to escape embedded `'` bytes. The previous
+  rule used double quotes and only escaped `"` and `\\`, so a path
+  containing `$USER`, `$(...)`, or backticks was still subject to
+  shell expansion. `NVM.Version()` builds a `source <path> && nvm
+  --version` script using whatever `NVM_DIR` (or `~/.nvm`) provides,
+  so setting `NVM_DIR='/tmp/$(touch /tmp/PWNED)'` would expand
+  inside bash's double quotes before reaching nvm. Single-quote
+  wrapping disables bash variable expansion, command substitution,
+  and backtick substitution entirely. The Windows branch
+  (cmd.exe-unaware double-quote wrapping for paths-with-spaces) is
+  unchanged. The test table for `QuotePath` now expects single quotes
+  on POSIX, plus a dedicated `TestQuotePathNeutralizesShellInjection`
+  regression test, plus a `TestNVM_Version_NVMDirShellInjectionIsNeutralized`
+  detector-level test that points `NVM_DIR` at a payload string and
+  asserts no unquoted `$(touch` occurrence in the emitted script.
+  Closes #43.
 
 ## [0.0.0] - 2024-07-01
 
