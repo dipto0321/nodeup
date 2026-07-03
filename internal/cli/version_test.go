@@ -119,3 +119,52 @@ func TestVersionCmd_CheckFlagIsNoOpNotError(t *testing.T) {
 		t.Errorf("expected --check to print the placeholder, got:\n%s", got)
 	}
 }
+
+// TestVersionCmd_UsesInjectedWriter is the unit test for the #74 PR1
+// PoC migration: it constructs a root command via NewRootCmd (so
+// PersistentPreRunE runs and the writerCtxKey gets populated), then
+// runs `nodeup version` and confirms the output bytes came from the
+// ui.Writer (not from fmt.Fprintf against cmd.OutOrStdout). The
+// proof is that the bytes are routed to whichever sink we asked for
+// — in PlainMode that's a direct passthrough, so the strings are
+// byte-for-byte identical to the legacy test above.
+func TestVersionCmd_UsesInjectedWriter(t *testing.T) {
+	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
+
+	// NewRootCmd wires --no-color into a PersistentPreRunE that
+	// resolves DecideMode and stashes a ui.Writer on cmd.Context().
+	// We want PlainMode (the default in `go test`), so we don't set
+	// the --no-color flag — the writer should be auto-detected as
+	// plain because the test's stdout isn't a TTY.
+	root := NewRootCmd("v1.2.3", "abc1234", "2026-01-02T03:04:05Z")
+	root.SetOut(out)
+	root.SetErr(errOut)
+	root.SetArgs([]string{"version"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("root.Execute: %v", err)
+	}
+
+	got := out.String()
+	for _, want := range []string{
+		"nodeup version v1.2.3",
+		"  commit:     abc1234",
+		"  built:      2026-01-02T03:04:05Z",
+		"  go version: go",
+		"  platform:   ",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected output to contain %q, got:\n%s", want, got)
+		}
+	}
+
+	// In PlainMode the bytes flow straight through to the buffer, so
+	// there are no glyphs / ANSI escapes to worry about — the byte
+	// shape must match what the legacy test pins.
+	if strings.Contains(got, "\x1b[") {
+		t.Errorf("PlainMode output should not contain ANSI escapes, got:\n%s", got)
+	}
+	if strings.Contains(got, "✓") {
+		t.Errorf("PlainMode output should not contain glyphs, got:\n%s", got)
+	}
+}

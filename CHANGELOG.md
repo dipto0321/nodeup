@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `internal/ui` package: the single source of truth for user-facing
+  output. Two implementations of a `Writer` interface —
+  `PlainWriter` (no ANSI, no decoration, used when stdout/stdin
+  aren't TTYs or when `--no-color`/`NO_COLOR` is set) and
+  `FancyWriter` (lipgloss-styled, used in real terminals). The mode
+  decision lives in `ui.DecideMode` and is computed once per
+  invocation in root.go's `PersistentPreRunE`, then stashed on
+  `cmd.Context()` so subcommands read it via a tiny `writerFromCmd`
+  helper rather than constructing their own. `nodeup version` is
+  migrated as the proof-of-concept for the larger migration; the
+  remaining commands (upgrade, check, list, packages, config) are
+  migrated in follow-up PRs per #74's phasing. Spinners and
+  interactive prompts (bubbletea + huh) ship in later PRs in the
+  same series. Closes #74 (PR1 of 4).
 - Post-upgrade cleanup prompt (`nodeup upgrade`): after a successful
   upgrade, nodeup asks whether to delete the old Node.js versions
   left behind. The prompt offers three options — `y` deletes every
