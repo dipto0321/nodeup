@@ -37,130 +37,92 @@ git push origin vX.Y.Z
 - [ ] All 5 binaries attached + checksums.txt
 - [ ] Homebrew formula pushed to `dipto0321/homebrew-tap`
 - [ ] Scoop manifest pushed to `dipto0321/scoop-bucket`
-- [ ] npm wrapper published to the npm registry (see below)
+- [ ] `publish-npm` job green; `npm view nodeupx version` matches
+      the tag (automatic via OIDC Trusted Publishing — see below;
+      **manual for the very first `nodeupx` publish only**)
 
-### Publishing `nodeup-npm` to the npm registry
+### Publishing `nodeupx` (`nodeup-npm/`) to the npm registry
 
-The npm wrapper lives in `nodeup-npm/` at the repo root and ships via
-`npm publish` **after** the GitHub release is up. The wrapper's
+The npm wrapper lives in `nodeup-npm/` at the repo root. Publishing
+happens **after** the GitHub release is up: the wrapper's
 `postinstall` script (`scripts/install.js`) fetches the binary
 matching the `binaryVersion` field in `package.json`, so the GitHub
-release for that version **must already exist** before publishing
-the wrapper — otherwise every install 404s on the binary download.
+release for that version **must already exist** — otherwise every
+install 404s on the binary download.
 
-```bash
-# 1. Sanity-check the tarball before publishing. This should print
-#    exactly 5 files: LICENSE, README.md, package.json, and the two
-#    scripts. No bin/, no .npmignore, no node_modules.
-cd nodeup-npm
-npm pack --dry-run
-cd ..
+**The decided flow is OIDC Trusted Publishing.** The `publish-npm`
+job in `.github/workflows/release.yml` is already wired: on every
+`v*.*.*` tag push it runs after GoReleaser, exchanges the runner's
+OIDC token for a one-hour publish token scoped to `nodeupx`, and
+runs `npm publish --provenance --access public`. No `NPM_TOKEN`
+secret, nothing to rotate. From the second publish onward there is
+**no manual npm step at all** — tag, wait, verify.
 
-# 2. Log in to npmjs.com. Since the Dec 2025 token changes,
-#    `npm login` produces a short-lived session token (~2 hours)
-#    rather than a long-lived classic token, so re-login is normal
-#    after breaks. It will prompt for an OTP from your
-#    authenticator app.
-npm login
+The only manual publish is the **first one**: npm's Trusted
+Publisher config lives on the package's access page, which doesn't
+exist until the package does. So the one-time bootstrap is:
 
-# 3. From the wrapper directory, publish. npm prompts for a fresh
-#    OTP at publish time (separate from the login OTP) — keep your
-#    authenticator open.
-cd nodeup-npm
-npm publish
-cd ..
-```
+#### One-time bootstrap (first `nodeupx` publish)
 
-**Required once, not per release:**
+Account prerequisites:
 
-- An `npmjs.com` account with publish rights on the `nodeupx`
-  package name. The bare `nodeup` name is owned by an unrelated
-  2015 package (`romanmt/nodeup`, "a simple cluster implementation
-  for node") so we ship under `nodeupx`. `npm publish` will fail
-  with `You do not have permission to publish "nodeupx"` if the
-  name isn't claimed yet on your account.
-- **2FA enabled** on the npm account, with an authenticator-app
-  factor (TOTP). Configure under
+- An `npmjs.com` account. The bare `nodeup` name is owned by an
+  unrelated 2015 package (`romanmt/nodeup`, "a simple cluster
+  implementation for node") so we ship under `nodeupx` (unclaimed
+  as of 2026-07-04; the earlier `nodeup-cli@1.0.0` was unpublished).
+- **2FA enabled** with an authenticator-app factor (TOTP), under
   `https://www.npmjs.com/settings/<your-username>/security` →
   Two-Factor Authentication → **Authenticator app**. SMS and
   email-only are not accepted for publish. Save the recovery codes
   in your password manager.
 
-**Repeat for every wrapper version bump.** The flow is the same
-when the wrapper pins to a new `binaryVersion`: confirm the GitHub
-release exists, `npm pack --dry-run`, then `npm publish`.
+```bash
+# 1. Sanity-check the tarball. This should print exactly 5 files:
+#    LICENSE, README.md, package.json, and the two scripts.
+#    No bin/, no .npmignore, no node_modules.
+cd nodeup-npm
+npm pack --dry-run
 
-**Can I automate it?** Yes, but not for the very first publish. The
-current npm auth model (since the Dec 9, 2025 token changes)
-offers two options — pick one before wiring up `release.yml`:
+# 2. Log in. Since the Dec 2025 token changes, `npm login` produces
+#    a short-lived session token (~2 hours); it prompts for an OTP
+#    from your authenticator app.
+npm login
 
-**Option A — OIDC Trusted Publishing (recommended).** GitHub
-Actions can publish without a long-lived secret. The runner
-exchanges its built-in OIDC token for a one-hour publish token
-scoped to the `nodeupx` package. Per-package config lives in
-npm's "Trusted Publisher" UI.
+# 3. Publish. npm prompts for a fresh OTP at publish time (separate
+#    from the login OTP) — keep your authenticator open.
+npm publish
+cd ..
+```
 
-1. After the first manual `npm publish` succeeds, open
-   <https://www.npmjs.com/package/nodeupx/access> (or the
+Then register the trusted publisher so every later version ships
+from CI:
+
+1. Open <https://www.npmjs.com/package/nodeupx/access> (or the
    "Trust" tab on the package page) and add a trusted publisher:
    - Provider: **GitHub Actions**
    - Repository: `dipto0321/nodeup`
    - Workflow: `release.yml`
-   - Environment: *(leave blank unless you use one)*
-2. Add a publish step to `.github/workflows/release.yml` after
-   the GoReleaser job:
+   - Environment: *(leave blank — this repo doesn't use one)*
+2. Nothing to change in the repo — `release.yml` already carries
+   the `publish-npm` job (`id-token: write`, clean `.npmrc` with no
+   `_authToken` line, Node 24 for npm ≥ 11.5.1). See the job's
+   comments for the OIDC footguns it deliberately avoids.
 
-   ```yaml
-   - name: Publish npm wrapper (OIDC)
-     if: startsWith(github.ref, 'refs/tags/v')
-     working-directory: ./nodeup-npm
-     run: npm publish --provenance --access public
-   ```
+#### Every subsequent release
 
-   No secret is needed. The OIDC exchange happens automatically
-   when `GITHUB_TOKEN` is present. The publish token is short-lived
-   (~1 hour) and tied to a specific workflow run, so leaking it is
-   not a concern.
+Automatic. The tag push runs GoReleaser, then `publish-npm`
+publishes the wrapper via OIDC with `--provenance` (npm shows the
+"Built and signed on GitHub Actions" badge). Verify with
+`npm view nodeupx version`. If the job fails with `ENEEDAUTH`,
+check that the trust entry on npmjs.com still matches this repo,
+the `release.yml` filename, and the GitHub user — that trio is the
+whole auth surface.
 
-**Option B — Granular access token as `NPM_TOKEN`.** Browser-only
-flow (npm doesn't yet support granular-token creation via the CLI
-as of writing). Use this if you want to keep auth out of GitHub
-Actions entirely, or if you're publishing from a non-GitHub CI.
-
-1. Go to
-   <https://www.npmjs.com/settings/<your-username>/tokens> and
-   click **Generate New Token**.
-2. Fill in:
-   - **Name / description**: e.g. `nodeupx-ci-publish`
-   - **Expiration**: 30 days (granular tokens max out at 90 days;
-     rotate before expiry)
-   - **Packages and scopes**: select `nodeupx` only (not `*`,
-     not unscoped — limit the blast radius)
-   - **Permissions**: `Read and write` on packages
-   - **Bypass 2FA**: ON (so the CI publish doesn't need an OTP)
-3. The token shows once. Copy it.
-4. Add it as a repo secret:
-
-   ```bash
-   gh secret set NPM_TOKEN --repo dipto0321/nodeup
-   # paste the token at the prompt
-   ```
-
-5. Add a publish step that uses it:
-
-   ```yaml
-   - name: Publish npm wrapper (token)
-     if: startsWith(github.ref, 'refs/tags/v')
-     working-directory: ./nodeup-npm
-     run: npm publish --provenance --access public
-     env:
-       NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-   ```
-
-**Which one?** A unless you have a reason for B. A leaves no
-secret to rotate, no scope to limit, and no token to leak. B
-exists for non-GitHub CI and for when you want a human-readable
-audit trail of which token published which version.
+**Token-based fallback** (not used here; only if publishing from a
+non-GitHub CI): a granular access token, package-scoped to
+`nodeupx`, 90-day max expiry, stored as `NPM_TOKEN` and passed as
+`NODE_AUTH_TOKEN` to `npm publish`. Prefer the trusted publisher —
+it leaves no secret to rotate or leak.
 
 ## Post-release
 
