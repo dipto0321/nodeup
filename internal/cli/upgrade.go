@@ -210,12 +210,36 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Snapshot current packages
+	// Snapshot current packages. We record one snapshot per installed
+	// version so the user can manually replay against any of them via
+	// `nodeup packages restore <mgr> <version>`, but the upgrade flow
+	// itself only replays from the latest installed version (below) —
+	// the snapshots for older installed versions remain on disk for
+	// the user's reference.
+	//
+	// While we're at it, resolve the conventional snapshot path for
+	// the latest installed version — this is the path both the
+	// sentinel arms and the restore step reads from, so we compute it
+	// once and pass it down.
+	var restoreSnapshotPath string
+	var oldVersion string
 	if !skipMigrate {
 		ctx := cmd.Context()
 		for _, v := range installedVersions {
 			if err := packages.Snapshot(ctx, m.Name(), v); err != nil {
 				cmd.Printf("Warning: snapshot failed for %s: %v\n", v, err)
+			}
+		}
+		if len(installedVersions) > 0 {
+			last := installedVersions[len(installedVersions)-1]
+			oldVersion = last.String()
+			// Resolve the snapshot path the conventional way. We
+			// tolerate a failure here — without a snapshot path the
+			// sentinel is still useful (it tells the user a
+			// migration was in flight) and we don't want to abort
+			// the upgrade over a path-resolution glitch.
+			if p, perr := packages.SnapshotPath(m.Name(), oldVersion); perr == nil {
+				restoreSnapshotPath = p
 			}
 		}
 	}
@@ -225,35 +249,19 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// cleanup, the sentinel is the "this upgrade was interrupted"
 	// breadcrumb that the next `nodeup` invocation will pick up.
 	//
-	// We point the sentinel at the latest installed version's snapshot
-	// since that is the most likely one we want to replay against —
-	// it contains the package set the user had right before we started
-	// installing the new versions.
+	// The sentinel records the snapshot path so that
+	// `nodeup packages restore --from <sentinel path>` can replay
+	// against exactly the same package set we were about to install.
 	if !skipMigrate {
 		newVersion := ""
 		if len(toInstall) > 0 {
 			newVersion = toInstall[len(toInstall)-1].String()
 		}
-		oldVersion := ""
-		var snapshotPath string
-		if len(installedVersions) > 0 {
-			last := installedVersions[len(installedVersions)-1]
-			oldVersion = last.String()
-			// Resolve the snapshot path the conventional way so the
-			// warning message can hand it to the user verbatim. We
-			// tolerate a failure here — without a snapshot path the
-			// sentinel is still useful (it tells the user a migration
-			// was in flight) and we don't want to abort the upgrade
-			// over a path-resolution glitch.
-			if p, perr := packages.SnapshotPath(m.Name(), oldVersion); perr == nil {
-				snapshotPath = p
-			}
-		}
 		if err := packages.WriteSentinel(packages.UpgradeSentinel{
 			Manager:      m.Name(),
 			OldVersion:   oldVersion,
 			NewVersion:   newVersion,
-			SnapshotPath: snapshotPath,
+			SnapshotPath: restoreSnapshotPath,
 		}); err != nil {
 			cmd.Printf("Warning: failed to write upgrade sentinel: %v\n", err)
 		} else {
@@ -277,13 +285,23 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Restore packages
+	// Restore packages under the NEW default. We replay the snapshot
+	// of the latest previously-installed Node version's global npm
+	// packages against the freshly-set-default Node — the user's
+	// globals carry forward to the new install exactly once.
+	//
+	// We deliberately do NOT loop per-new-version here: each newly
+	// installed Node has its own `npm install -g` environment, and
+	// the right package set is the one from the user's most-recent
+	// active Node, not from any freshly-installed (empty) one. The
+	// sentinel already records this snapshot path for
+	// replay-after-interrupt (`nodeup packages restore --from
+	// <sentinel path>`); here we read the same path directly.
 	if !skipMigrate && len(toInstall) > 0 {
-		ctx := cmd.Context()
-		for _, v := range toInstall {
-			if err := packages.Restore(ctx, m.Name(), *v); err != nil {
-				cmd.Printf("Warning: restore failed: %v\n", err)
-			}
+		if restoreSnapshotPath == "" {
+			cmd.Printf("Warning: no snapshot path available to restore from; skipping package migration\n")
+		} else if err := packages.RestoreFromSnapshot(cmd.Context(), restoreSnapshotPath); err != nil {
+			cmd.Printf("Warning: restore failed: %v\n", err)
 		}
 	}
 
