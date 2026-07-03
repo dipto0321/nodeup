@@ -141,21 +141,56 @@ func EnvWithSource() []string {
 // contains paths from the user (e.g., ~/.nvm/nvm.sh). Spaces are common
 // on Windows ("C:\Program Files\...").
 //
-// We use double-quotes on unix (preserving $variables) and double-quotes
-// on Windows inside cmd.exe — which won't expand %FOO% inside double
-// quotes the same way, but it's still safer than leaving the path bare.
+// Quoting rules by platform:
+//
+//   - On unix (bash): we wrap in single quotes, escaping any embedded
+//     single quote as `'\”` (close-quote, literal-quote, reopen-quote).
+//     Inside single quotes, bash performs NO expansion — `$`, “ ` “,
+//     `\\`, `"`, `;`, `|` all become literal. This is the only quoting
+//     mode that fully neuters command injection, including for values
+//     like NVM_DIR that are read from the environment without further
+//     validation. See #43.
+//   - On Windows (cmd.exe): we wrap in double quotes. cmd.exe's unquote
+//     rules differ from bash (notably, `\` and `"` have special
+//     handling); the goal here is just to keep paths-with-spaces
+//     together, not to defeat injection (the nvm path on Windows goes
+//     through the nvm-windows manager, which has its own quoting story).
 func QuotePath(p string) string {
 	if p == "" {
 		return `""`
 	}
-	// If the path contains no characters that the shell would interpret,
-	// return it as-is. Otherwise wrap in double quotes and escape embedded
-	// double quotes / backslashes appropriately per platform.
-	safe := true
-	unsafeChars := " \"$`<>|'"
 	if runtime.GOOS == "windows" {
-		unsafeChars = " \""
+		return quotePathWindows(p)
 	}
+	return quotePathPOSIX(p)
+}
+
+// quotePathPOSIX wraps p in single quotes, escaping any embedded `'` as
+// `'\”`. The result is safe to embed verbatim in a bash script — bash
+// will not expand any variable, command substitution, or backtick
+// inside the quoted region.
+func quotePathPOSIX(p string) string {
+	// The set of characters that are unconditionally safe to leave
+	// inside a single-quoted string WITHOUT triggering any quoting
+	// requirement: every byte except `'` itself. We still always wrap
+	// (rather than only-on-demand) to keep the function's contract
+	// "result is always a shell-safe literal of the input" — callers
+	// can rely on the output being safe regardless of the input.
+	//
+	// Always wrap, then handle the single-quote escape inside.
+	return `'` + strings.ReplaceAll(p, `'`, `'\''`) + `'`
+}
+
+// quotePathWindows wraps p for cmd.exe. On Windows, only `"` forces
+// quoting (cmd.exe requires the path to be wrapped in double quotes if
+// it contains spaces or tabs, and `"` inside the path must be escaped).
+// Other characters — including `\\`, `%`, `&`, `|`, `<`, `>` — have
+// cmd.exe-specific handling that we do NOT attempt to fully neutralize
+// here; the use case is filesystem paths that may have spaces
+// ("C:\Program Files\…"), not arbitrary user-controlled strings.
+func quotePathWindows(p string) string {
+	safe := true
+	unsafeChars := " \""
 	for _, c := range p {
 		if strings.ContainsRune(unsafeChars, c) {
 			safe = false
@@ -165,7 +200,6 @@ func QuotePath(p string) string {
 	if safe {
 		return p
 	}
-	// Escape backslashes and double quotes for double-quoted string.
 	escaped := strings.ReplaceAll(p, `\`, `\\`)
 	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
 	return `"` + escaped + `"`
