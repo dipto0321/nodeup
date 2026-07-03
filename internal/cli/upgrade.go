@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"github.com/dipto0321/nodeup/internal/detector"
 	"github.com/dipto0321/nodeup/internal/node"
 	"github.com/dipto0321/nodeup/internal/packages"
+	"github.com/dipto0321/nodeup/internal/platform"
 )
 
 // newUpgradeCmd implements `nodeup upgrade` — upgrade LTS and/or Current versions.
@@ -209,6 +211,27 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	}
+
+	// Acquire the nodeup concurrency lock. Two `nodeup upgrade` (or
+	// `nodeup upgrade` + `nodeup config set`) invocations running in
+	// parallel would otherwise snapshot/install/migrate against the
+	// same data dir with no guard between them — see #44. We acquire
+	// AFTER the dry-run early-return because dry-run is read-only
+	// (no disk mutation, no shell-out) and we don't want a
+	// concurrent read-only query to hold a lock a real mutation is
+	// waiting on.
+	upgradeLock, err := platform.AcquireLock()
+	if err != nil {
+		if errors.Is(err, platform.ErrAlreadyLocked) {
+			return fmt.Errorf("refusing to upgrade: %w\n  (another nodeup process holds the lock; wait for it to finish, or kill the stale process)", err)
+		}
+		return fmt.Errorf("acquire upgrade lock: %w", err)
+	}
+	defer func() {
+		if rerr := upgradeLock.Release(); rerr != nil {
+			cmd.Printf("Warning: failed to release upgrade lock: %v\n", rerr)
+		}
+	}()
 
 	// Snapshot current packages. We record one snapshot per installed
 	// version so the user can manually replay against any of them via

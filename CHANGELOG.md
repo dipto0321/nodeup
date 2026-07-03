@@ -157,6 +157,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   detector-level test that points `NVM_DIR` at a payload string and
   asserts no unquoted `$(touch` occurrence in the emitted script.
   Closes #43.
+- `internal/cli`: the `platform.AcquireLock`/`Release` infrastructure
+  (flock on POSIX, `LockFileEx` on Windows, stale-PID detection)
+  existed but had zero call sites anywhere in the CLI, despite the
+  README and `package` doc comments claiming concurrent runs are
+  blocked. Two parallel `nodeup upgrade` invocations could snapshot,
+  install, and migrate against the same data dir with no guard
+  between them; two parallel `nodeup config set` invocations raced
+  on read-modify-write of the YAML file (each Save is atomic on its
+  own, but the second writer's atomic rename silently clobbers the
+  first writer's in-memory changes — a lost update). `runUpgrade`,
+  `config set`, and `config init` now `defer platform.AcquireLock()`
+  around their critical sections and surface `ErrAlreadyLocked`
+  with a "another nodeup process holds the lock" hint instead of
+  silently racing. Dry-run is read-only and intentionally does NOT
+  acquire the lock (it returns before any mutation). The README's
+  stale lock-path documentation (`~/.nodeup/nodeup.lock`) is fixed
+  to point at the actual `platform.LockPath()` resolution
+  (`<DataDir>/nodeup.lock` per OS — Linux XDG, macOS
+  `~/Library/Application Support/nodeup/nodeup.lock`, Windows
+  `%APPDATA%\nodeup\nodeup.lock`). Closes #44.
 
 ## [0.0.0] - 2024-07-01
 

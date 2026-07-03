@@ -57,9 +57,13 @@ A few things worth knowing before you run `nodeup`:
 - **Native addons may need a rebuild** after a major Node version
   bump. If something like `node-sass` or `sharp` misbehaves, run
   `npm rebuild -g` against the new version.
-- **Concurrent runs are blocked** via a lock file at
-  `~/.nodeup/nodeup.lock`. If a run crashes mid-upgrade, the next
-  invocation offers to restore from the snapshot written at the start.
+- **Concurrent runs are blocked** via a lock file at the platform
+  `DataDir` (resolved by `platform.LockPath()` — e.g.
+  `~/.local/share/nodeup/nodeup.lock` on Linux,
+  `~/Library/Application Support/nodeup/nodeup.lock` on macOS,
+  `%APPDATA%\nodeup\nodeup.lock` on Windows). If a run crashes
+  mid-upgrade, the next invocation offers to restore from the
+  snapshot written at the start.
 
 ## Installation
 
