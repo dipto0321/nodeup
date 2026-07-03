@@ -146,6 +146,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for the full rationale.
 
 ### Fixed
+- `internal/cli` (`upgrade.go`): `Manager.Current()` failure no
+  longer leaves the active Node.js version unprotected from
+  cleanup deletion. Pre-fix, the post-upgrade cleanup step
+  silently swallowed `Current()` errors and proceeded with the
+  zero `semver.Version` for "active" — which `cleanupCandidates`
+  treats as "no active version to exclude" (by design, to avoid
+  the zero value matching a real version). The practical effect
+  was: a `Current()` failure (e.g. `nvm` after `nvm deactivate`,
+  or any transient `node -p` parse hiccup) turned the version
+  powering the user's shell into an ordinary cleanup candidate,
+  and a `--cleanup` / `--yes` / `cfg.Cleanup.Auto` invocation
+  would auto-delete it. We now fail closed: `currentErr != nil`
+  sets a new `cleanupConfig.ForcePerVersion` flag (downgrading
+  `AutoDeleteAll` to `false` and forcing `PerVersion=true` so
+  nothing gets auto-deleted), and surfaces a stderr warning
+  explaining why the per-version prompt is firing. The
+  `NonInteractive` short-circuit still wins over `ForcePerVersion`
+  (skipping cleanup is a stronger fail-closed stance than
+  per-version prompting), and the active-version exclusion logic
+  in `cleanupCandidates` is intentionally unchanged. New tests
+  in `cleanup_test.go` pin the downgrade behavior end-to-end
+  (`AutoDeleteAll=true → ForcePerVersion=true` requires per-
+  version y/N, `PerVersion=false → ForcePerVersion=true` still
+  requires per-version y/N, and `NonInteractive=true +
+  ForcePerVersion=true` still skips entirely). Closes #58.
 - `internal/cli` (`upgrade.go`): `--yes --no-cleanup` no longer
   silently auto-deletes every eligible old Node.js version. The
   `if yes { ... }` block at upgrade.go:107-111 ran unconditionally
