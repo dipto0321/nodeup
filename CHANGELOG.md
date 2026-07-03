@@ -646,6 +646,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the buggy double-prompt behavior) are updated to assert the
   new correct behavior; `TestCleanupPrompt_DeleteAllSkipsPerVersionPrompt`
   is the explicit regression test for #76. Closes #76.
+- `CLAUDE.md`: refresh the stale sections that have drifted out
+  of sync with the actual code and with `README.md` /
+  `CHANGELOG.md`. The "Known bugs (do not re-introduce)" entry
+  used to describe a `ManifestVersion.LTS bool` + useless
+  `TS string \`json:"ts"\`` fallback — but the actual code at
+  `internal/node/dist.go:25-62` already uses `LTSCodename *string`
+  with a custom `UnmarshalJSON` that handles the nodejs.org `lts`
+  JSON union correctly. The pre-fix shape is gone; the doc would
+  have misled a future contributor or AI assistant into
+  "fixing" something that isn't broken. The phase-status table
+  listed Phase 5 (Config subsystem) and Phase 6 (Cross-platform
+  polish) as "Not started" — both are fully implemented per the
+  CHANGELOG's Unreleased section and per `README.md`'s own
+  Project-status table, which marks Phases 1-6 done. Updated
+  Phases 4-6 to "Done" and Phase 7 to "In progress" (the
+  GoReleaser / brew / scoop / npm distribution work tracked by
+  #17 / #18 is genuinely outstanding). The architecture
+  diagram listed `internal/packages/restore.go` for `Restore`
+  — that file doesn't exist; `Restore` and the additional
+  `RestoreFromSnapshot` both live in `snapshot.go`. The
+  dependencies line listed `gjson` and `yaml.v3` as "planned
+  but not yet in go.mod" — `yaml.v3` is in go.mod (used by
+  the config subsystem), `gjson` was never added. Closes #54.
 
 ## [0.0.0] - 2024-07-01
 

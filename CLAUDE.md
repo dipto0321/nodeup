@@ -30,7 +30,8 @@ internal/node/
   dist.go                  nodejs.org/dist/index.json client + 24h TTL cache
 internal/packages/         npm global snapshot / restore / migrate (merged in PR #19)
   snapshot.go              Snapshot(ctx, managerName, version) → ~/.../snapshots/<mgr>-<ver>.json
-  restore.go               Restore(ctx, managerName, version)
+                          Restore(ctx, managerName, version)
+                          RestoreFromSnapshot(ctx, path)
 internal/platform/
   platform.go              DataDir(), SnapshotsDir(), CacheDir(), LockPath(), IsWindows(), …
   shell.go                 RunShell() — all shell exec goes here
@@ -49,7 +50,7 @@ internal/ui/               (planned, not yet implemented) all user-facing output
 
 **Platform-specific code:** Use `//go:build windows` build tags on `*_windows.go` files. Files without build tags must compile on all three OSes.
 
-**Dependencies:** No new dependencies without a rationale line in the PR body. Core runtime deps: `cobra`, `Masterminds/semver/v3`. Planned but not yet in `go.mod`: `huh`, `bubbletea`, `lipgloss`, `gjson`, `yaml.v3`.
+**Dependencies:** No new dependencies without a rationale line in the PR body. Core runtime deps: `cobra`, `Masterminds/semver/v3`, `yaml.v3`. Planned but not yet in `go.mod`: `huh`, `bubbletea`, `lipgloss` (the Charm stack for `internal/ui` — see #74).
 
 **Manager detection order:** `--manager` flag → `~/.nodeup/config.yaml` → auto-detect (env vars → PATH → well-known dirs). `DetectAll()` returns a `Registry`; `ResolveManager(reg, preferred)` picks one or errors. When multiple managers found and no preference, the caller should use `ResolveInteractive` (not yet implemented).
 
@@ -57,7 +58,12 @@ internal/ui/               (planned, not yet implemented) all user-facing output
 
 ## Known bugs (do not re-introduce)
 
-`ManifestVersion.LTS` in `internal/node/dist.go:22` is typed `bool`, but the nodejs.org API returns a union: `false` for Current releases and a string codename (e.g. `"Iron"`) for LTS releases. The fallback `TS string \`json:"ts"\`` on line 23 does not help because the real JSON key is `lts`, not `ts`. Fix requires a custom `UnmarshalJSON` or `json.RawMessage` on the `LTS` field. This is a latent bug activated by `upgrade.go` calling `FetchManifest()`. Tracked in PR #20 review.
+`ManifestVersion.LTS` in `internal/node/dist.go:25-62` is now properly
+typed as `LTSCodename *string` with a custom `UnmarshalJSON` that
+handles the nodejs.org `lts` JSON union (Current releases have
+`lts: false`, LTS releases have `lts: "<codename>"`). The pre-fix
+shape (typed `bool` with a useless `TS string \`json:"ts"\`` fallback)
+is gone. Don't "fix" this back to a plain `bool`.
 
 ## Commit & PR conventions
 
@@ -116,11 +122,11 @@ orchestrator.
 | 1 — Detector engine | Done | merged |
 | 2 — Node version API | Done | merged |
 | 3 — Package snapshot/restore | Done | merged (PR #19) |
-| 4 — Upgrade command + UI | In progress | `feat/upgrade/end-to-end` / PR #20 |
-| 5 — Config subsystem | Not started | — |
-| 6 — Cross-platform polish | Not started | — |
-| 7 — Distribution packaging | Not started | — |
-| 8 — v1.0.0 release | Not started | — |
+| 4 — Upgrade command + UI | Done | merged |
+| 5 — Config subsystem | Done | merged |
+| 6 — Cross-platform polish | Done | merged (interrupted-upgrade sentinel, `QuotePath`, system-node classifier) |
+| 7 — Distribution packaging | In progress | partial — post-upgrade cleanup prompt merged; GoReleaser/brew/scoop/npm tracked by #17 / #18 |
+| 8 — v1.0.0 release | In progress | blocked on Phase 7 distribution (#17 / #18) |
 
 ## On-disk data layout
 
