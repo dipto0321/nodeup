@@ -730,6 +730,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `make test` produces `coverage.out`; renamed to `coverage.out`
   so a contributor running the documented `make test` sees the
   same filename CI consumes. Closes #69.
+- CI/CD supply-chain hardening from issue #67:
+  `.github/workflows/release.yml` now passes `--provenance` to
+  `npm publish` so the published `nodeup-cli` package carries a
+  SLSA-style attestation generated from the OIDC token (npm's
+  "Built and signed on GitHub Actions" badge, which the
+  release-checklist docs already called for — Option A).
+  All 14 `uses:` lines in `.github/workflows/ci.yml` and
+  `release.yml` are now pinned to commit SHAs with a
+  `# v<N>` comment for readability, instead of mutable
+  major-version tags. Action SHAs were resolved at pin time
+  via `git/refs/tags/<v>` for each release. This closes the
+  supply-chain class where a compromised or force-pushed
+  action tag would silently pull unreviewed code into
+  `release.yml` (which runs with `contents: write` and
+  handles publish secrets). Closes #67.
 
 ## [0.0.0] - 2024-07-01
 
