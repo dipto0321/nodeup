@@ -28,15 +28,47 @@ COVERAGE_HTML := coverage.html
 # .github/workflows/ci.yml. Bump all three together when upgrading.
 GO_VERSION ?= 1.24
 
+# Build-time metadata injected via -X main.X=... ldflags. Mirrors
+# the three -X flags .goreleaser.yaml:37 sets on real release
+# builds:
+#
+#   -X main.version={{.Version}}     → VERSION  (git tag, or short SHA)
+#   -X main.commit={{.ShortCommit}}  → COMMIT   (short SHA)
+#   -X main.date={{.CommitDate}}      → DATE     (RFC3339 timestamp)
+#
+# Pre-fix, `make build` and `go install` left all three at the
+# package-level defaults in cmd/nodeup/main.go (`dev` / `none` /
+# `unknown`), so `nodeup version` printed those literals on every
+# local build — defeating the install-verification flow documented
+# in docs/installation.md#verifying and the bug-report triage
+# instructions in CONTRIBUTING.md that ask reporters to paste
+# `nodeup version` output. See #68.
+#
+# Each shell call is wrapped with a `|| echo <fallback>` so a build
+# inside a snapshot tarball or vendored copy without `.git/` falls
+# back to safe defaults rather than crashing the build.
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
+DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)
+
+# LDFLAGS is the full -ldflags string. Keep the leading `-ldflags=`
+# off the variable so callers can pass it as either `-ldflags "$(LDFLAGS)"`
+# or `-ldflags=$(LDFLAGS)` — both work, but only the latter survives
+# a `go build` invocation from a shell that splits on spaces (Make's
+# recipe shell does; most shells do not). The form used by `build`
+# below matches .goreleaser.yaml:37 verbatim so a local build is
+# indistinguishable from a release build via `nodeup version`.
+LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
+
 .PHONY: help
 help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: build
-build: ## Compile nodeup into ./bin/nodeup
+build: ## Compile nodeup into ./bin/nodeup with version/commit/date injected
 	@mkdir -p $(BUILD_DIR)
-	go build -trimpath -ldflags "-s -w" -o $(BUILD_DIR)/$(BINARY) ./cmd/nodeup
-	@echo "Built $(BUILD_DIR)/$(BINARY)"
+	go build -trimpath -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(BINARY) ./cmd/nodeup
+	@echo "Built $(BUILD_DIR)/$(BINARY) (version=$(VERSION), commit=$(COMMIT), date=$(DATE))"
 
 .PHONY: test
 test: ## Run unit tests with race + coverage
@@ -79,8 +111,8 @@ clean: ## Remove build artifacts
 	go clean -cache -testcache
 
 .PHONY: install
-install: ## Install nodeup into $GOPATH/bin
-	go install -trimpath -ldflags "-s -w" ./cmd/nodeup
+install: ## Install nodeup into $GOPATH/bin with version/commit/date injected
+	go install -trimpath -ldflags "$(LDFLAGS)" ./cmd/nodeup
 
 .PHONY: release-snap
 release-snap: ## Build a snapshot release locally (no publish)

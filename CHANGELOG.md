@@ -570,6 +570,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   next to the pin explains the parity-with-go.mod invariant so
   future bumps in either direction are caught in code review.
   Closes #66.
+- `Makefile`: inject `-X main.version=... -X main.commit=...
+  -X main.date=...` ldflags into the `build` and `install`
+  targets so a locally-built binary's `nodeup version` output
+  reports the actual git commit and build timestamp instead of
+  the package-level defaults (`dev` / `none` / `unknown` per
+  `cmd/nodeup/main.go:20,23,26`). Pre-fix, every `make build` and
+  every `go install .../cmd/nodeup` (or `@latest`) shipped with
+  the defaults — defeating the install-verification flow
+  documented in `docs/installation.md#verifying` ("Should print a
+  version, git commit, build date, and Go runtime info") and
+  undermining the bug-report triage instructions in
+  `CONTRIBUTING.md` that ask reporters to paste `nodeup version`
+  output (a locally-built binary was indistinguishable from any
+  other local build, so triage couldn't tell if the bug reproed
+  on the latest commit or on a stale checkout). Three new
+  Makefile vars capture the values at parse time:
+  - `VERSION` from `git describe --tags --always --dirty` —
+    closest semver tag (when the repo has tags) or short SHA +
+    `-dirty` if the working tree is dirty; falls back to `dev`
+    when git is unavailable (snapshot tarball build).
+  - `COMMIT` from `git rev-parse --short HEAD` — falls back to
+    `none` if git is unavailable.
+  - `DATE` from `date -u +%Y-%m-%dT%H:%M:%SZ` — RFC3339 UTC,
+    matches `.goreleaser.yaml:37`'s `{{.CommitDate}}` shape.
+  Each shell call is wrapped with `|| echo <fallback>` so a build
+  inside a snapshot tarball or vendored copy without `.git/`
+  falls back to safe defaults rather than crashing the build.
+  Combined into a single `LDFLAGS` variable so both targets share
+  one source of truth, and the build target now echoes
+  `(version=…, commit=…, date=…)` after a successful build so
+  the operator can confirm the injected values without running
+  the binary. `internal/cli/version_test.go` (new, 5 tests)
+  pins the exact output shape of `nodeup version` (line-by-line
+  format, multi-line output, `go1.X.Y` runtime pattern,
+  `<goos>/<goarch>` platform pattern, and `--check` flag is a
+  no-op not an error) so a future refactor can't silently drop
+  a field. Closes #68.
 
 ## [0.0.0] - 2024-07-01
 
