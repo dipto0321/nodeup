@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-07-05
+
+The headline of this release is the **`internal/ui` rollout** — the
+SPEC.md `V2` invariant that every user-facing string in `internal/`
+and `cmd/` flows through the `ui` package is now enforced (not just
+aspirational). Three PRs shipped this: `#117` adds bubbletea-backed
+spinners for long-running steps, `#118` adds huh-backed interactive
+prompts (Confirm / Select), and `#119` migrates every remaining
+`cmd.Printf` / `fmt.Fprintf` call site in `internal/cli/*` to
+`ui.Writer.{Info,Success,Warn,Error,Println}`. FancyMode (lipgloss
+glyphs + colors) and the animated braille-pattern spinner now
+appear uniformly across every command when stdout and stdin are
+both TTYs; PlainMode (no decoration) stays the default for pipes,
+CI, and `--no-color`.
+
+Also included: a `chore(ci)` relaxation of the commitlint
+`footer-max-line-length` rule from 100 to 200 chars. Admin
+squash-merge footers (the "Closes #N. ..." / "Part of #N. ..."
+trailers) routinely exceed 100 chars when they summarize a PR body,
+and the strict 100-char cap was breaking CI on every push-to-main
+after such a merge. The relaxation unblocks the release pipeline
+without weakening the body-length guard for hand-authored commits.
+
 ## [Unreleased]
 
 ### Added

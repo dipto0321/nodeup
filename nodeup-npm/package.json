@@ -1,6 +1,6 @@
 {
   "name": "nodeupx",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Automated Node.js version upgrade + global package migration CLI. Static Go binary wrapped for npm distribution.",
   "license": "MIT",
   "author": "Dipto Karmakar <dipto@local>",
@@ -42,5 +42,5 @@
     "README.md",
     "LICENSE"
   ],
-  "binaryVersion": "1.0.1"
+  "binaryVersion": "1.1.0"
 }
