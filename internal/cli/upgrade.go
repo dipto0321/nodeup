@@ -15,6 +15,7 @@ import (
 	"github.com/dipto0321/nodeup/internal/node"
 	"github.com/dipto0321/nodeup/internal/packages"
 	"github.com/dipto0321/nodeup/internal/platform"
+	"github.com/dipto0321/nodeup/internal/ui"
 )
 
 // newUpgradeCmd implements `nodeup upgrade` — upgrade LTS and/or Current versions.
@@ -132,19 +133,34 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// JSON / table output.
 	warnSystemNodeIfNeeded(cmd.Context(), m, os.Stderr)
 
-	// Fetch versions
+	// Fetch versions. In PlainMode (CI, piped output, --no-color),
+	// the spinner is a one-shot "Fetching versions ..." line so log
+	// aggregators see one record per operation. In FancyMode (real
+	// terminal), bubbletea animates a braille-frame spinner while
+	// nodejs.org responds. The spinner Stop() call after work returns
+	// is idempotent in PlainMode; in FancyMode it asks tea to drain
+	// and exits.
 	var manifest node.Manifest
 	if offline {
 		manifest, err = node.LoadCached()
+		if err != nil {
+			return fmt.Errorf("load cached manifest: %w", err)
+		}
 	} else {
 		// Use the ctx-aware variant so Ctrl-C cancels an in-flight
 		// nodejs.org fetch. The package-level httpClient.Timeout (30s,
 		// set in dist.go) covers the case where nodejs.org simply
 		// hangs without ever acknowledging cancellation. See #48.
-		manifest, err = node.FetchManifestCtx(cmd.Context())
-	}
-	if err != nil {
-		return fmt.Errorf("fetch versions: %w", err)
+		fetch := func() error {
+			m, ferr := node.FetchManifestCtx(cmd.Context())
+			if ferr == nil {
+				manifest = m
+			}
+			return ferr
+		}
+		if serr := ui.WaitWithSpinner(cmd.Context(), spinnerFor(cmd, "Fetching versions"), fetch); serr != nil {
+			return fmt.Errorf("fetch versions: %w", serr)
+		}
 	}
 
 	var targetVersions []*node.ManifestVersion
@@ -237,13 +253,23 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// the latest installed version — this is the path both the
 	// sentinel arms and the restore step reads from, so we compute it
 	// once and pass it down.
+	//
+	// Each per-version snapshot runs under its own spinner — the user
+	// sees one "Snapshotting globals (v22.10.0) ..." line per installed
+	// version. For users with many installed versions this keeps the
+	// progress legible without re-architecting the loop.
 	var restoreSnapshotPath string
 	var oldVersion string
 	if !skipMigrate {
 		ctx := cmd.Context()
 		for _, v := range installedVersions {
-			if err := packages.Snapshot(ctx, m.Name(), v); err != nil {
-				cmd.Printf("Warning: snapshot failed for %s: %v\n", v, err)
+			ver := v
+			take := func() error {
+				return packages.Snapshot(ctx, m.Name(), ver)
+			}
+			label := fmt.Sprintf("Snapshotting globals (%s)", ver)
+			if serr := ui.WaitWithSpinner(ctx, spinnerFor(cmd, label), take); serr != nil {
+				cmd.Printf("Warning: snapshot failed for %s: %v\n", ver, serr)
 			}
 		}
 		if len(installedVersions) > 0 {
@@ -285,19 +311,31 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Install new versions
+	// Install new versions. Each version gets its own spinner line
+	// — the manager's Install call can take 10-60s per version (it's
+	// downloading a Node tarball and unpacking into the manager dir),
+	// so this is the main place the user feels the wait. Per-version
+	// scoped labels make the progress visible in plain log output too.
 	for _, v := range toInstall {
-		cmd.Printf("Installing %s...\n", v)
-		if err := m.Install(*v); err != nil {
-			return fmt.Errorf("install %s: %w", v, err)
+		install := func() error {
+			return m.Install(*v)
+		}
+		label := fmt.Sprintf("Installing %s", v)
+		if serr := ui.WaitWithSpinner(cmd.Context(), spinnerFor(cmd, label), install); serr != nil {
+			return fmt.Errorf("install %s: %w", v, serr)
 		}
 	}
 
 	// Set default
 	if len(toInstall) > 0 {
 		latest := toInstall[len(toInstall)-1]
-		if err := m.SetDefault(*latest); err != nil {
-			return fmt.Errorf("set default: %w", err)
+		ver := latest
+		setDefault := func() error {
+			return m.SetDefault(*ver)
+		}
+		label := fmt.Sprintf("Setting default to %s", ver)
+		if serr := ui.WaitWithSpinner(cmd.Context(), spinnerFor(cmd, label), setDefault); serr != nil {
+			return fmt.Errorf("set default: %w", serr)
 		}
 	}
 
@@ -327,7 +365,31 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		if restoreSnapshotPath == "" {
 			cmd.Printf("Warning: no snapshot path available to restore from; skipping package migration\n")
 		} else {
-			outcome, rerr := packages.RestoreFromSnapshot(cmd.Context(), restoreSnapshotPath)
+			// Snapshot path → restore. The restore step runs `npm
+			// install -g <pkg>` per captured global, so for users with
+			// many globals this is the second longest step after the
+			// initial install. The spinner here wraps the entire
+			// restore call (loop-all, see #103) — finer-grained
+			// per-package progress is in the MigrationReport rather
+			// than the spinner.
+			var outcome packages.RestoreOutcome
+			restore := func() error {
+				// RestoreFromSnapshot populates outcome (with
+				// partial results) even when it returns an error —
+				// we want those for the MigrationReport below.
+				// The contract on RestoreFromSnapshot (see packages/
+				// snapshot.go) is to return whatever it managed to
+				// install before failing, so always capture outcome
+				// regardless of rerr.
+				o, rerr := packages.RestoreFromSnapshot(cmd.Context(), restoreSnapshotPath)
+				outcome = o
+				return rerr
+			}
+			rerr := ui.WaitWithSpinner(
+				cmd.Context(),
+				spinnerFor(cmd, "Migrating global packages"),
+				restore,
+			)
 
 			// Write a MigrationReport whenever we actually attempted at
 			// least one package. Skipping the write on empty results
@@ -442,6 +504,31 @@ func parseVersion(s string) (*semver.Version, error) {
 		s = s[1:]
 	}
 	return semver.NewVersion(s)
+}
+
+// spinnerFor constructs a Spinner matching the active ui.Writer's
+// mode, rendered to cmd's stderr. We deliberately route the spinner
+// to stderr (not stdout) so plain-mode users can pipe `nodeup upgrade
+// | jq` for machine-readable progress tracking and the spinner line
+// still appears on the terminal — the human-side channel.
+//
+// In FancyMode, the bubbletea program gets its own pipe so its frames
+// don't interleave with whatever the caller writes via Writer.Success
+// during the same operation. See internal/ui/spinner.go for the
+// pipe-isolation rationale.
+//
+// Per CLAUDE.md / #105 invariants, this is the only call site in
+// internal/cli that knows about the spinner interface; the rest of
+// the codebase talks to ui.WaitWithSpinner. Future PRs (PR3, PR4) can
+// thread spinners into other long-running commands without revisiting
+// this file.
+func spinnerFor(cmd *cobra.Command, label string) ui.Spinner {
+	w := writerFromCmd(cmd)
+	stderr := cmd.ErrOrStderr()
+	if stderr == nil {
+		stderr = cmd.OutOrStdout()
+	}
+	return ui.NewSpinner(w.Mode(), label, stderr)
 }
 
 // warnSystemNodeIfNeeded is the upgrade-command hook for the
