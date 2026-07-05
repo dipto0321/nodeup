@@ -18,14 +18,23 @@ import (
 // FNM is the Fast Node Manager implementation. See
 // internal/detector/detector.go for the Manager interface contract.
 //
-// Phase 1 implements the detection surface only:
-//   - Detect       : cheap PATH probe via exec.LookPath
-//   - Version      : `fnm --version`, parsed to drop the leading "fnm "
-//   - ListInstalled: `fnm list`, parsed into sorted []semver.Version
+// Detection:
+//   - Detect        : cheap PATH probe via exec.LookPath
+//   - Version       : `fnm --version`, parsed to drop the leading "fnm "
+//   - ListInstalled : `fnm list`, parsed into sorted []semver.Version
+//   - Current       : `fnm current`, parsed via parseFNMCurrent
 //
-// Mutation methods (Install, Uninstall, Use, SetDefault, GlobalNpmPrefix)
-// return an explicit "not implemented" error so callers can detect them
-// at runtime instead of getting a silent zero-value result.
+// Mutations shell out to the `fnm` binary directly:
+//   - Install       : `fnm install <v>`
+//   - Uninstall     : `fnm uninstall <v>` (refuses if <v> is the default;
+//     callers must SetDefault elsewhere first)
+//   - Use           : `fnm use <v>` (current shell only)
+//   - SetDefault    : `fnm default <v>` (persists for new shells)
+//
+// Layout queries:
+//   - GlobalNpmPrefix : resolves $FNM_DIR/node-versions/<v>/installation/lib/node_modules,
+//     with a fallback to the older .../lib/node_modules
+//     layout used before fnm 1.30.
 type FNM struct{}
 
 // NewFNM constructs a fresh fnm detector. Returned by value so each
@@ -40,13 +49,6 @@ func (f *FNM) Name() string { return "fnm" }
 //
 // Signature matches platform.RunShell so a direct assignment works.
 var runShell = platform.RunShell
-
-// ErrFNMNotImplemented is returned by FNM mutation methods that have not
-// yet been implemented in Phase 1 (Install, Uninstall, Use, SetDefault,
-// GlobalNpmPrefix). Returning this error instead of a zero value lets
-// callers distinguish "I haven't done it yet" from "user passed a bad
-// version" via errors.Is.
-var ErrFNMNotImplemented = errors.New("fnm mutation commands not yet implemented")
 
 // Detect returns true when an fnm executable can be located on PATH.
 // Per the Manager contract, it MUST be cheap — exec.LookPath does a
@@ -158,9 +160,7 @@ func parseFNMInstalled(stdout string) ([]semver.Version, error) {
 // --- Mutation methods ----------------------------------------------------
 //
 // Install, Uninstall, Use, SetDefault, GlobalNpmPrefix, and Current all
-// shell out to the `fnm` binary through runShell. They were left as
-// stubs in Phase 1; filling them in was deferred until the upgrade
-// command (Phase 4) actually needed them.
+// shell out to the `fnm` binary through runShell.
 //
 // All shell-outs follow the same error-wrapping convention: a non-zero
 // exit becomes a wrapped error containing the captured stderr, so the
