@@ -380,7 +380,7 @@ func TestRestoreFromSnapshot_ValidFile(t *testing.T) {
 	// With an empty Packages list, RestoreFromSnapshot runs the
 	// install loop zero times and returns nil — no need for a fake
 	// `npm install` binary on PATH.
-	if err := RestoreFromSnapshot(t.Context(), snapPath); err != nil {
+	if _, err := RestoreFromSnapshot(t.Context(), snapPath); err != nil {
 		t.Errorf("RestoreFromSnapshot: %v", err)
 	}
 }
@@ -389,7 +389,7 @@ func TestRestoreFromSnapshot_ValidFile(t *testing.T) {
 // includes both the path they typed AND a "read snapshot" hint so they
 // don't have to read source to figure out what went wrong.
 func TestRestoreFromSnapshot_MissingFile(t *testing.T) {
-	err := RestoreFromSnapshot(t.Context(), "/nonexistent/snapshot.json")
+	_, err := RestoreFromSnapshot(t.Context(), "/nonexistent/snapshot.json")
 	if err == nil {
 		t.Fatal("expected error for missing snapshot file")
 	}
@@ -409,7 +409,7 @@ func TestRestoreFromSnapshot_CorruptFile(t *testing.T) {
 	if err := os.WriteFile(snapPath, []byte("{not valid json"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	err := RestoreFromSnapshot(t.Context(), snapPath)
+	_, err := RestoreFromSnapshot(t.Context(), snapPath)
 	if err == nil {
 		t.Fatal("expected error for corrupt JSON")
 	}
