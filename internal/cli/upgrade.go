@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -114,9 +113,28 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// Detect managers
+	// Detect managers. ResolveManagerAuto returns
+	// ErrInteractiveRequired when multiple managers were detected
+	// and no preference (CLI flag / config / env) is set; we
+	// hand off to ResolveInteractive in that case. The
+	// nonInteractive flag is true when --yes was passed, which
+	// makes ResolveInteractive surface a "use --manager" hint
+	// rather than blocking on stdin (CI scripts that ran without
+	// either --yes-suppressing manager selection OR
+	// --manager=picking-one end up here).
 	installed := detector.DetectAll()
-	m, err := detector.ResolveManager(installed, managerPref)
+	m, err := detector.ResolveManagerAuto(installed, managerPref)
+	if errors.Is(err, detector.ErrInteractiveRequired) {
+		// Hand off to the picker. We deliberately pass nil for
+		// the ui.Prompt — ResolveInteractive falls back to a
+		// built-in plain prompt against the cmd streams, which
+		// matches what upgrade.go already does for the cleanup
+		// prompts (same migration lives in PR3 / #105).
+		m, err = detector.ResolveInteractive(
+			installed, nil, yes,
+			cmd.InOrStdin(), cmd.OutOrStdout(),
+		)
+	}
 	if err != nil {
 		return fmt.Errorf("resolve manager: %w", err)
 	}
@@ -475,16 +493,21 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		// os.Stdin / cmd.OutOrStdout() so non-interactive shells
 		// still work. We deliberately do NOT use cmd.SetIn/SetOut
 		// (test injection happens via the io package).
+		//
+		// The prompt is constructed via ui.NewPrompt against the
+		// writer's mode so FancyMode gets huh's Select/Confirm with
+		// arrow-key navigation, while PlainMode falls back to a
+		// numbered list on stdout + a single-line read from stdin.
+		writer := writerFromCmd(cmd)
+		prompt := ui.NewPrompt(writer.Mode(), cmd.InOrStdin(), cmd.OutOrStdout())
 		result, cerr := runCleanupPrompt(
+			prompt,
+			writer,
 			cleanupCfg,
 			newVersions,
 			installedVersions,
 			active,
 			m,
-			cleanupIO{
-				in:  bufio.NewReader(cmd.InOrStdin()),
-				out: cmd.OutOrStdout(),
-			},
 		)
 		if cerr != nil {
 			// Non-fatal: log and proceed to the success message.

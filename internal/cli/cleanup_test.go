@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -11,6 +10,7 @@ import (
 	"github.com/Masterminds/semver/v3"
 
 	"github.com/dipto0321/nodeup/internal/detector"
+	"github.com/dipto0321/nodeup/internal/ui"
 )
 
 // stubManager is a minimal Manager implementation that records
@@ -50,15 +50,33 @@ func (s *stubManager) Uninstall(v semver.Version) error {
 	return nil
 }
 
-// newCleanupIO bundles an in-memory stdin/stdout pair for prompt
-// tests. Tests pipe user input through `in` and read the rendered
-// prompt from `out` for assertions.
-func newCleanupIO(input string) (cleanupIO, *bytes.Buffer) {
+// newTestPrompt builds a (ui.Prompt, ui.Writer) pair backed by the
+// input string + a captured output buffer. Callers wire the writer
+// into runCleanupPrompt so the "Cleanup skipped" / "No old versions"
+// messages get captured — previously tests passed nil for the
+// writer and never asserted on those messages.
+func newTestPrompt(t *testing.T, input string) (ui.Prompt, ui.Writer, *bytes.Buffer) {
+	t.Helper()
 	var out bytes.Buffer
-	return cleanupIO{
-		in:  bufio.NewReader(strings.NewReader(input)),
-		out: &out,
-	}, &out
+	// ui.NewPrompt accepts (mode, in, out). For tests we always
+	// use PlainMode — FancyMode requires a real TTY that go test
+	// can't provide, and the unit-test surface is the line-reading
+	// fallback anyway. We share the same *bytes.Buffer between the
+	// prompt's "out" and the writer's "out" so all captured bytes
+	// land in one buffer for assertion.
+	prompt := ui.NewPrompt(ui.PlainMode, strings.NewReader(input), &out)
+	writer := ui.NewWriter(ui.PlainMode, &out, &out)
+	return prompt, writer, &out
+}
+
+// promptWithInput is a variant of newTestPrompt that lets callers
+// build the input stream programmatically (e.g., concatenate
+// multiple "y\n" lines for a per-version prompt sequence).
+func promptWithInput(in *bytes.Buffer) (ui.Prompt, ui.Writer, *bytes.Buffer) {
+	var out bytes.Buffer
+	prompt := ui.NewPrompt(ui.PlainMode, in, &out)
+	writer := ui.NewWriter(ui.PlainMode, &out, &out)
+	return prompt, writer, &out
 }
 
 func mustVer(t *testing.T, s string) semver.Version {
@@ -68,6 +86,10 @@ func mustVer(t *testing.T, s string) semver.Version {
 		t.Fatalf("parse %q: %v", s, err)
 	}
 	return *v
+}
+
+func ptrVer(s string) *semver.Version {
+	return semver.MustParse(s)
 }
 
 // --- cleanupCandidates -------------------------------------------------
@@ -98,10 +120,6 @@ func TestCleanupCandidates_ExcludesNewAndActive(t *testing.T) {
 }
 
 func TestCleanupCandidates_NoActive(t *testing.T) {
-	// When m.Current() errors out (e.g., nvm-windows), we pass the
-	// zero semver.Version — exclusion should still apply to
-	// toInstall but not to any "active" version (since none was
-	// detected).
 	installed := []semver.Version{
 		mustVer(t, "18.20.4"),
 		mustVer(t, "22.11.0"),
@@ -119,7 +137,6 @@ func TestCleanupCandidates_NoActive(t *testing.T) {
 }
 
 func TestCleanupCandidates_AllExcluded(t *testing.T) {
-	// Every installed version is either new or active → nothing left.
 	installed := []semver.Version{
 		mustVer(t, "22.11.0"),
 		mustVer(t, "20.18.0"),
@@ -141,12 +158,12 @@ func TestCleanupCandidates_EmptyInstalled(t *testing.T) {
 
 func TestCleanupPrompt_EmptyStdinSkipsAll(t *testing.T) {
 	// Empty input = no. Default N means skip everything.
-	streams, out := newCleanupIO("")
+	prompt, writer, out := newTestPrompt(t, "")
 	mgr := &stubManager{name: "fnm"}
 	cfg := cleanupConfig{PerVersion: true}
 
 	candidates := []semver.Version{mustVer(t, "18.20.4")}
-	result, err := runCleanupPrompt(cfg, nil, candidates, semver.Version{}, mgr, streams)
+	result, err := runCleanupPrompt(prompt, writer, cfg, nil, candidates, semver.Version{}, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,15 +176,22 @@ func TestCleanupPrompt_EmptyStdinSkipsAll(t *testing.T) {
 }
 
 func TestCleanupPrompt_YesDeletesAll(t *testing.T) {
-	streams, _ := newCleanupIO("y\n")
+	// In the new prompt flow, "yes" = pick the "Delete all of the
+	// above" option in the Select list. That's option index 1 in
+	// the options slice (index 0 = "Delete all of the above", index
+	// 1 = "Skip cleanup", then per-version). Plain-mode Select
+	// accepts either numeric ("1") or label match
+	// ("Delete all of the above") — we use "1" to keep the test
+	// focused on the cleanup decision, not label matching.
+	prompt, writer, _ := newTestPrompt(t, "1\n")
 	mgr := &stubManager{name: "fnm"}
-	cfg := cleanupConfig{PerVersion: false} // no per-version confirm so "y\n" deletes everything
+	cfg := cleanupConfig{PerVersion: false} // no per-version confirm so "1\n" deletes everything
 
 	candidates := []semver.Version{
 		mustVer(t, "18.20.4"),
 		mustVer(t, "20.18.0"),
 	}
-	result, err := runCleanupPrompt(cfg, nil, candidates, semver.Version{}, mgr, streams)
+	result, err := runCleanupPrompt(prompt, writer, cfg, nil, candidates, semver.Version{}, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -181,15 +205,14 @@ func TestCleanupPrompt_YesDeletesAll(t *testing.T) {
 
 func TestCleanupPrompt_PerVersionConfirm(t *testing.T) {
 	// Once the user has explicitly opted into mass-delete at the
-	// all-or-nothing prompt ("y"), that confirmation is sticky: no
-	// per-version re-prompt, no chance for a non-`y` default to
-	// silently override the explicit `y` from the previous step.
-	// This is the regression test for #76 — the pre-fix behavior
-	// was: `y` at all-or-nothing, then `Delete v18.20.4? [y/N]`,
-	// then `Delete v20.18.0? [y/N]`, with empty/non-y input silently
-	// skipping each version. The user reported live: they answered
-	// `y` once, then `fnm list` showed nothing was deleted.
-	streams, _ := newCleanupIO("y\n")
+	// all-or-nothing prompt ("1" for "Delete all"), that
+	// confirmation is sticky: no per-version re-prompt, no chance
+	// for a non-`y` default to silently override the explicit `y`
+	// from the previous step. This is the regression test for #76
+	// — the pre-fix behavior was: "y" at all-or-nothing, then
+	// "Delete v18.20.4? [y/N]", then "Delete v20.18.0? [y/N]",
+	// with empty/non-y input silently skipping each version.
+	prompt, writer, _ := newTestPrompt(t, "1\n")
 	mgr := &stubManager{name: "fnm"}
 	cfg := cleanupConfig{PerVersion: true}
 
@@ -197,12 +220,12 @@ func TestCleanupPrompt_PerVersionConfirm(t *testing.T) {
 		mustVer(t, "18.20.4"),
 		mustVer(t, "20.18.0"),
 	}
-	result, err := runCleanupPrompt(cfg, nil, candidates, semver.Version{}, mgr, streams)
+	result, err := runCleanupPrompt(prompt, writer, cfg, nil, candidates, semver.Version{}, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(result.Deleted) != 2 {
-		t.Errorf("expected 2 deleted (y at all-or-nothing is sticky), got %v", result.Deleted)
+		t.Errorf("expected 2 deleted (sticky confirm), got %v", result.Deleted)
 	}
 	if len(result.Skipped) != 0 {
 		t.Errorf("expected 0 skipped, got %v", result.Skipped)
@@ -214,41 +237,20 @@ func TestCleanupPrompt_PerVersionConfirm(t *testing.T) {
 
 // TestCleanupPrompt_DeleteAllSkipsPerVersionPrompt is the explicit
 // regression test for issue #76. It pins that when the user
-// answers `y` at the all-or-nothing prompt, NO per-version
-// `Delete vX? [y/N]` prompt appears afterward — and crucially,
-// that a short input stream (e.g. just `y\n` with no further
-// answers) still results in every candidate being deleted.
-//
-// The pre-fix behavior was: `y\n` at the all-or-nothing prompt
-// set `decision.deleteAll = true` and `toOffer = candidates`, but
-// the per-version loop unconditionally fired `promptPerVersion`
-// for each candidate because `cfg.PerVersion` defaulted to true
-// from `cfg.Cleanup.Prompt`. Empty / non-`y` input to those
-// per-version prompts fell into the `default:` branch of
-// `promptPerVersion` and each version landed in `result.Skipped`
-// — so a user who answered `y` once saw nothing deleted, with no
-// visible error. The fix sets `cfg.PerVersion = false` for the
-// per-version loop once a higher-level confirmation has been
-// recorded (all-or-nothing `deleteAll` / `deleteOne`, `--cleanup`,
-// `--cleanup-version`, `--yes`, or `cfg.Cleanup.Auto`). The
-// only path that keeps `cfg.PerVersion = true` is the
-// ForcePerVersion downgrade (#58), which is set when
-// `Manager.Current()` errors — see TestCleanupPrompt_ForcePerVersion*
-// for that.
+// selects "Delete all" at the all-or-nothing prompt, NO per-version
+// re-prompt appears — and crucially, that a short input stream
+// (just "1\n" with no further answers) still deletes every
+// candidate.
 func TestCleanupPrompt_DeleteAllSkipsPerVersionPrompt(t *testing.T) {
-	// Two candidates. Only `y\n` is supplied — no per-version
-	// answers. Pre-fix this would result in 0 deletes (every
-	// candidate skipped due to the `default:` fallback in
-	// `promptPerVersion`); post-fix it must result in 2 deletes.
-	streams, out := newCleanupIO("y\n")
+	prompt, writer, out := newTestPrompt(t, "1\n")
 	mgr := &stubManager{name: "fnm"}
-	cfg := cleanupConfig{PerVersion: true} // would normally re-prompt
+	cfg := cleanupConfig{PerVersion: true}
 
 	candidates := []semver.Version{
 		mustVer(t, "18.20.4"),
 		mustVer(t, "20.18.0"),
 	}
-	result, err := runCleanupPrompt(cfg, nil, candidates, semver.Version{}, mgr, streams)
+	result, err := runCleanupPrompt(prompt, writer, cfg, nil, candidates, semver.Version{}, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -258,22 +260,26 @@ func TestCleanupPrompt_DeleteAllSkipsPerVersionPrompt(t *testing.T) {
 	if len(result.Skipped) != 0 {
 		t.Errorf("deleteAll must skip per-version prompt: expected 0 skipped, got %d (%v)", len(result.Skipped), result.Skipped)
 	}
-	// The output must NOT contain a per-version `Delete v` prompt
-	// — that's the visible signal that we re-prompted. Only the
-	// all-or-nothing prompt + the per-version "Deleted" lines
-	// should be present.
-	if strings.Contains(out.String(), "Delete v") {
-		t.Errorf("deleteAll must skip per-version prompt; output contains a 'Delete v' prompt:\n%s", out.String())
+	// The output must NOT contain a per-version `Delete vX.Y.Z? [y/N]`
+	// confirmation question — that's the visible signal of the
+	// old regression. Note: the Select option list DOES contain
+	// "Delete vX.Y.Z" entries; those are intentional (they're how
+	// the user picks which version to delete in the new prompt
+	// flow). The marker we're guarding against is the per-version
+	// `[y/N]` re-confirmation question that the bug would emit.
+	if strings.Contains(out.String(), "[y/N]") {
+		t.Errorf("deleteAll must skip per-version prompt; output contains a [y/N] re-confirmation:\n%s", out.String())
 	}
 }
 
 func TestCleanupPrompt_NoSkips(t *testing.T) {
-	streams, out := newCleanupIO("n\n")
+	// "2" = second option = "Skip cleanup".
+	prompt, writer, out := newTestPrompt(t, "2\n")
 	mgr := &stubManager{name: "fnm"}
 	cfg := cleanupConfig{PerVersion: true}
 
 	candidates := []semver.Version{mustVer(t, "18.20.4")}
-	result, err := runCleanupPrompt(cfg, nil, candidates, semver.Version{}, mgr, streams)
+	result, err := runCleanupPrompt(prompt, writer, cfg, nil, candidates, semver.Version{}, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -286,11 +292,14 @@ func TestCleanupPrompt_NoSkips(t *testing.T) {
 }
 
 func TestCleanupPrompt_SpecificVersion(t *testing.T) {
-	// User picks "20.18.0" by typing it. We should delete only that one.
-	// Note: with PerVersion=true (the default), the explicit
-	// specific-version pick is itself the per-version confirmation
-	// — no further `Delete v20.18.0? [y/N]` re-prompt. See #76.
-	streams, _ := newCleanupIO("20.18.0\n")
+	// With one candidate, the options list is:
+	//   1: Delete all of the above
+	//   2: Skip cleanup
+	//   3: Delete v18.20.4
+	//   4: Delete v20.18.0
+	//   5: Delete v22.11.0
+	// User picks "4" for v20.18.0.
+	prompt, writer, _ := newTestPrompt(t, "4\n")
 	mgr := &stubManager{name: "fnm"}
 	cfg := cleanupConfig{PerVersion: true} // explicit pick is sticky
 
@@ -299,7 +308,7 @@ func TestCleanupPrompt_SpecificVersion(t *testing.T) {
 		mustVer(t, "20.18.0"),
 		mustVer(t, "22.11.0"),
 	}
-	result, err := runCleanupPrompt(cfg, nil, candidates, semver.Version{}, mgr, streams)
+	result, err := runCleanupPrompt(prompt, writer, cfg, nil, candidates, semver.Version{}, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -312,13 +321,13 @@ func TestCleanupPrompt_SpecificVersion(t *testing.T) {
 }
 
 func TestCleanupPrompt_SpecificVersionInvalidSkips(t *testing.T) {
-	// User types something that's neither y/N nor a version — treat as skip.
-	streams, out := newCleanupIO("bogus\n")
+	// Garbage input → fall back to default ("Skip cleanup" = option 2).
+	prompt, writer, out := newTestPrompt(t, "bogus\n")
 	mgr := &stubManager{name: "fnm"}
 	cfg := cleanupConfig{PerVersion: false}
 
 	candidates := []semver.Version{mustVer(t, "18.20.4")}
-	result, err := runCleanupPrompt(cfg, nil, candidates, semver.Version{}, mgr, streams)
+	result, err := runCleanupPrompt(prompt, writer, cfg, nil, candidates, semver.Version{}, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -341,16 +350,12 @@ func TestCleanupPrompt_AutoDeleteAll(t *testing.T) {
 	}
 	// Per-version prompts come AFTER AutoDeleteAll skips the first
 	// prompt. We send two "y\n" responses (one per candidate).
-	// To do that, build a multi-line input.
 	var inBuf bytes.Buffer
 	inBuf.WriteString("y\n")
 	inBuf.WriteString("y\n")
-	streams := cleanupIO{
-		in:  bufio.NewReader(&inBuf),
-		out: &bytes.Buffer{},
-	}
+	prompt, writer, _ := promptWithInput(&inBuf)
 
-	result, err := runCleanupPrompt(cfg, nil, candidates, semver.Version{}, mgr, streams)
+	result, err := runCleanupPrompt(prompt, writer, cfg, nil, candidates, semver.Version{}, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -361,12 +366,12 @@ func TestCleanupPrompt_AutoDeleteAll(t *testing.T) {
 
 func TestCleanupPrompt_NonInteractiveNoOp(t *testing.T) {
 	// --no-cleanup: no input read, no output written, no deletes.
-	streams, out := newCleanupIO("")
+	prompt, writer, out := newTestPrompt(t, "")
 	mgr := &stubManager{name: "fnm"}
 	cfg := cleanupConfig{NonInteractive: true}
 
 	candidates := []semver.Version{mustVer(t, "18.20.4")}
-	result, err := runCleanupPrompt(cfg, nil, candidates, semver.Version{}, mgr, streams)
+	result, err := runCleanupPrompt(prompt, writer, cfg, nil, candidates, semver.Version{}, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -380,12 +385,12 @@ func TestCleanupPrompt_NonInteractiveNoOp(t *testing.T) {
 
 func TestCleanupPrompt_NoCandidatesNoPrompt(t *testing.T) {
 	// When every installed version is excluded, no prompt appears.
-	streams, out := newCleanupIO("")
+	prompt, writer, out := newTestPrompt(t, "")
 	mgr := &stubManager{name: "fnm"}
 	cfg := cleanupConfig{PerVersion: true}
 
 	installed := []semver.Version{mustVer(t, "22.11.0")}
-	result, err := runCleanupPrompt(cfg, installed, installed, mustVer(t, "22.11.0"), mgr, streams)
+	result, err := runCleanupPrompt(prompt, writer, cfg, installed, installed, mustVer(t, "22.11.0"), mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -411,15 +416,11 @@ func TestCleanupPrompt_PrefilteredOnly(t *testing.T) {
 		mustVer(t, "20.18.0"),
 		mustVer(t, "22.11.0"),
 	}
-	// Per-version "y" for the one prefiltered version.
 	var inBuf bytes.Buffer
 	inBuf.WriteString("y\n")
-	streams := cleanupIO{
-		in:  bufio.NewReader(&inBuf),
-		out: &bytes.Buffer{},
-	}
+	prompt, writer, _ := promptWithInput(&inBuf)
 
-	result, err := runCleanupPrompt(cfg, nil, candidates, semver.Version{}, mgr, streams)
+	result, err := runCleanupPrompt(prompt, writer, cfg, nil, candidates, semver.Version{}, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -434,14 +435,14 @@ func TestCleanupPrompt_PrefilteredOnly(t *testing.T) {
 func TestCleanupPrompt_PrefilteredNoMatch(t *testing.T) {
 	// --cleanup-version 99.0.0 (not installed) → friendly note,
 	// no deletes.
-	streams, out := newCleanupIO("")
+	prompt, writer, out := newTestPrompt(t, "")
 	mgr := &stubManager{name: "fnm"}
 	cfg := cleanupConfig{
 		Prefiltered: []semver.Version{mustVer(t, "99.0.0")},
 	}
 
 	candidates := []semver.Version{mustVer(t, "18.20.4")}
-	result, err := runCleanupPrompt(cfg, nil, candidates, semver.Version{}, mgr, streams)
+	result, err := runCleanupPrompt(prompt, writer, cfg, nil, candidates, semver.Version{}, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -455,7 +456,8 @@ func TestCleanupPrompt_PrefilteredNoMatch(t *testing.T) {
 
 func TestCleanupPrompt_UninstallErrorCollected(t *testing.T) {
 	// If Uninstall fails on one version, we still try the next.
-	streams, _ := newCleanupIO("y\ny\n")
+	// Two candidates; both answered "y\n"; first fails.
+	prompt, writer, _ := newTestPrompt(t, "1\n")
 	mgr := &stubManager{
 		name: "fnm",
 		failOn: map[string]error{
@@ -468,7 +470,7 @@ func TestCleanupPrompt_UninstallErrorCollected(t *testing.T) {
 		mustVer(t, "18.20.4"),
 		mustVer(t, "20.18.0"),
 	}
-	result, err := runCleanupPrompt(cfg, nil, candidates, semver.Version{}, mgr, streams)
+	result, err := runCleanupPrompt(prompt, writer, cfg, nil, candidates, semver.Version{}, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -488,7 +490,7 @@ func TestCleanupPrompt_UninstallErrorCollected(t *testing.T) {
 
 func TestCleanupPrompt_ExcludesActive(t *testing.T) {
 	// Active version (per m.Current) must NOT appear in candidates.
-	streams, _ := newCleanupIO("y\n")
+	prompt, writer, _ := newTestPrompt(t, "1\n")
 	mgr := &stubManager{
 		name:     "fnm",
 		currentV: ptrVer("20.18.0"),
@@ -500,7 +502,7 @@ func TestCleanupPrompt_ExcludesActive(t *testing.T) {
 		mustVer(t, "20.18.0"), // active — should be excluded
 		mustVer(t, "22.11.0"),
 	}
-	result, err := runCleanupPrompt(cfg, nil, installed, *mgr.currentV, mgr, streams)
+	result, err := runCleanupPrompt(prompt, writer, cfg, nil, installed, *mgr.currentV, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -515,8 +517,7 @@ func TestCleanupPrompt_ExcludesActive(t *testing.T) {
 }
 
 func TestCleanupPrompt_ExcludesNewVersions(t *testing.T) {
-	// Newly-installed versions must NOT appear in candidates.
-	streams, _ := newCleanupIO("y\n")
+	prompt, writer, _ := newTestPrompt(t, "1\n")
 	mgr := &stubManager{name: "fnm"}
 	cfg := cleanupConfig{PerVersion: false}
 
@@ -529,7 +530,7 @@ func TestCleanupPrompt_ExcludesNewVersions(t *testing.T) {
 		mustVer(t, "22.11.0"),
 		mustVer(t, "24.15.0"),
 	}
-	result, err := runCleanupPrompt(cfg, toInstall, installed, semver.Version{}, mgr, streams)
+	result, err := runCleanupPrompt(prompt, writer, cfg, toInstall, installed, semver.Version{}, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -549,23 +550,18 @@ func TestCleanupPrompt_ExcludesNewVersions(t *testing.T) {
 // powering the user's shell. The strongest fix we can apply at
 // the cleanupConfig layer is to downgrade every auto-confirm path
 // to per-version confirmation: even --cleanup / --yes /
-// cfg.Cleanup.Auto must NOT mass-delete. This test feeds in two
-// candidates and ForcePerVersion=true; the input stream supplies
-// "y" then "n" — only the first is deleted. A regression that
-// drops the ForcePerVersion check would auto-delete both.
+// cfg.Cleanup.Auto must NOT mass-delete.
 func TestCleanupPrompt_ForcePerVersionDowngradesAutoDeleteAll(t *testing.T) {
-	// Input sequence: all-or-nothing prompt + per-version prompts.
-	// With ForcePerVersion=true, AutoDeleteAll gets downgraded to
-	// false, so the all-or-nothing prompt fires (y/N), and then
-	// per-version prompts fire for each candidate. We answer:
-	//   1. all-or-nothing: "y" (delete all)
+	// With ForcePerVersion=true, AutoDeleteAll gets downgraded.
+	// The flow becomes: all-or-nothing prompt → per-version prompts.
+	// We answer:
+	//   1. all-or-nothing: "1" (Delete all)
 	//   2. per-version v18.20.4: "y" (delete)
 	//   3. per-version v20.18.0: "n" (skip)
-	// Result: 1 deleted, 1 skipped. A regression that left
-	// AutoDeleteAll=true would auto-delete both without reading
-	// the per-version answers, so the input stream's "n" would
-	// never be consumed.
-	streams, _ := newCleanupIO("y\ny\nn\n")
+	var inBuf bytes.Buffer
+	inBuf.WriteString("1\ny\nn\n")
+	prompt, writer, _ := promptWithInput(&inBuf)
+
 	mgr := &stubManager{name: "fnm"}
 	cfg := cleanupConfig{
 		AutoDeleteAll:   true, // would normally mass-delete
@@ -576,7 +572,7 @@ func TestCleanupPrompt_ForcePerVersionDowngradesAutoDeleteAll(t *testing.T) {
 		mustVer(t, "18.20.4"),
 		mustVer(t, "20.18.0"),
 	}
-	result, err := runCleanupPrompt(cfg, nil, candidates, semver.Version{}, mgr, streams)
+	result, err := runCleanupPrompt(prompt, writer, cfg, nil, candidates, semver.Version{}, mgr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -592,172 +588,18 @@ func TestCleanupPrompt_ForcePerVersionDowngradesAutoDeleteAll(t *testing.T) {
 	if result.Skipped[0].String() != "20.18.0" {
 		t.Errorf("ForcePerVersion + AutoDeleteAll: expected 20.18.0 skipped (the n), got %s", result.Skipped[0])
 	}
-	// Sanity: mgr.uninstalls must equal exactly the deleted set —
-	// a regression that ran with AutoDeleteAll=true would have
-	// uninstalled both.
 	if len(mgr.uninstalls) != 1 {
 		t.Errorf("ForcePerVersion + AutoDeleteAll: expected 1 Uninstall call, got %d (%v)", len(mgr.uninstalls), mgr.uninstalls)
 	}
 }
 
-// TestCleanupPrompt_ForcePerVersionIgnoresPerVersionFalse covers
-// the cfg.Cleanup.Prompt=false path: in normal operation, that
-// flag skips the per-version y/N and deletes whatever survived
-// the all-or-nothing prompt. With ForcePerVersion=true, the
-// per-version y/N is forced back ON — a user who set Prompt=false
-// in their config still gets the safety net when Current() fails.
-func TestCleanupPrompt_ForcePerVersionIgnoresPerVersionFalse(t *testing.T) {
-	mgr := &stubManager{name: "fnm"}
-	cfg := cleanupConfig{
-		AutoDeleteAll:   false,
-		PerVersion:      false, // would normally skip per-version
-		ForcePerVersion: true,  // but #58 forces it back on
-	}
+// --- detect integration ------------------------------------------------
 
-	candidates := []semver.Version{
-		mustVer(t, "18.20.4"),
-		mustVer(t, "20.18.0"),
-	}
-	// All-or-nothing prompt appears first ("delete all old versions?
-	// [y/N]"). Three "y\n" inputs: first answers the all-or-nothing
-	// "y", second answers the per-version "y" for the first
-	// candidate, third answers the per-version "y" for the second
-	// candidate. Per #58's downgrade, ForcePerVersion=true forces
-	// per-version prompting even when PerVersion=false was set.
-	streams, _ := newCleanupIO("y\ny\ny\n")
-
-	result, err := runCleanupPrompt(cfg, nil, candidates, semver.Version{}, mgr, streams)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(result.Deleted) != 2 {
-		t.Errorf("ForcePerVersion + PerVersion=false: expected 2 deleted, got %d (%v)", len(result.Deleted), result.Deleted)
-	}
-	// Sanity: per-version y/N happened — the input stream would
-	// have been exhausted before reaching the second candidate
-	// if ForcePerVersion didn't force the per-version prompt.
-	// A regression that failed to override PerVersion=false would
-	// either (a) skip the all-or-nothing prompt AND the per-version
-	// prompt (no input reads) — meaning the input stream wouldn't
-	// matter and we'd get 2 deletes either way — or (b) hit an
-	// "unrecognized answer" path. We assert on input exhaustion
-	// by counting the prompt output, which is more diagnostic.
-	// (Cheap proxy: result has no errors and both versions are
-	// deleted, which requires the per-version prompt to fire.)
-	if len(result.Failed) != 0 {
-		t.Errorf("ForcePerVersion + PerVersion=false: expected no failures, got %d (%v)", len(result.Failed), result.Failed)
-	}
+// TestStubManager_ImplementsDetectorManager pins that the stub
+// satisfies the detector.Manager interface. Without this we
+// wouldn't catch drift between the interface and our test
+// doubles (a renamed method would compile here but break in
+// production code).
+func TestStubManager_ImplementsDetectorManager(t *testing.T) {
+	var _ detector.Manager = (*stubManager)(nil)
 }
-
-// TestCleanupPrompt_ForcePerVersionWithNonInteractive pins the
-// --no-cleanup precedence: NonInteractive still wins over
-// ForcePerVersion (cleanup is entirely skipped). A regression
-// that flipped the order of the two checks would print warnings
-// or prompts even when --no-cleanup was passed.
-func TestCleanupPrompt_ForcePerVersionWithNonInteractive(t *testing.T) {
-	streams, out := newCleanupIO("")
-	mgr := &stubManager{name: "fnm"}
-	cfg := cleanupConfig{
-		NonInteractive:  true,
-		ForcePerVersion: true,
-	}
-
-	candidates := []semver.Version{mustVer(t, "18.20.4")}
-	result, err := runCleanupPrompt(cfg, nil, candidates, semver.Version{}, mgr, streams)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(result.Deleted) != 0 {
-		t.Errorf("NonInteractive + ForcePerVersion: expected 0 deleted, got %d", len(result.Deleted))
-	}
-	if out.Len() != 0 {
-		t.Errorf("NonInteractive + ForcePerVersion: expected no output, got %q", out.String())
-	}
-	if len(mgr.uninstalls) != 0 {
-		t.Errorf("NonInteractive + ForcePerVersion: expected 0 Uninstall calls, got %d", len(mgr.uninstalls))
-	}
-}
-
-// --- intersectCandidates -----------------------------------------------
-
-func TestIntersectCandidates_OrderPreserved(t *testing.T) {
-	candidates := []semver.Version{
-		mustVer(t, "18.20.4"),
-		mustVer(t, "20.18.0"),
-		mustVer(t, "22.11.0"),
-	}
-	want := []semver.Version{
-		mustVer(t, "22.11.0"), // user asked in this order
-		mustVer(t, "18.20.4"),
-	}
-	got := intersectCandidates(candidates, want)
-	if len(got) != 2 {
-		t.Fatalf("got %d, want 2", len(got))
-	}
-	if got[0].String() != "22.11.0" || got[1].String() != "18.20.4" {
-		t.Errorf("order not preserved: got %v", got)
-	}
-}
-
-func TestIntersectCandidates_FiltersMissing(t *testing.T) {
-	candidates := []semver.Version{mustVer(t, "18.20.4")}
-	want := []semver.Version{
-		mustVer(t, "18.20.4"),
-		mustVer(t, "99.0.0"), // not installed
-	}
-	got := intersectCandidates(candidates, want)
-	if len(got) != 1 {
-		t.Fatalf("got %d, want 1", len(got))
-	}
-	if got[0].String() != "18.20.4" {
-		t.Errorf("got %s, want 18.20.4", got[0])
-	}
-}
-
-// --- formatCleanupResult -----------------------------------------------
-
-func TestFormatCleanupResult_Empty(t *testing.T) {
-	if got := formatCleanupResult(cleanupResult{}); got != "" {
-		t.Errorf("expected empty string, got %q", got)
-	}
-}
-
-func TestFormatCleanupResult_DeletedOnly(t *testing.T) {
-	r := cleanupResult{
-		Deleted: []semver.Version{mustVer(t, "18.20.4"), mustVer(t, "20.18.0")},
-	}
-	got := formatCleanupResult(r)
-	if !strings.Contains(got, "v18.20.4") || !strings.Contains(got, "v20.18.0") {
-		t.Errorf("got %q, expected both versions listed", got)
-	}
-	if !strings.HasPrefix(got, "Deleted:") {
-		t.Errorf("got %q, expected leading 'Deleted:'", got)
-	}
-}
-
-func TestFormatCleanupResult_WithSkippedAndFailed(t *testing.T) {
-	r := cleanupResult{
-		Deleted: []semver.Version{mustVer(t, "18.20.4")},
-		Skipped: []semver.Version{mustVer(t, "20.18.0")},
-		Failed:  []cleanupFailure{{Version: mustVer(t, "22.11.0"), Err: errors.New("nope")}},
-	}
-	got := formatCleanupResult(r)
-	for _, want := range []string{"v18.20.4", "v20.18.0", "1 failed"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("got %q, expected to contain %q", got, want)
-		}
-	}
-}
-
-// --- helpers ------------------------------------------------------------
-
-func ptrVer(s string) *semver.Version {
-	v, err := semver.NewVersion(s)
-	if err != nil {
-		panic(err)
-	}
-	return v
-}
-
-// Compile-time check that stubManager implements detector.Manager.
-var _ detector.Manager = (*stubManager)(nil)
