@@ -1,4 +1,4 @@
-// Package sentinel implements the upgrade-in-progress sentinel file.
+// Sentinel file handling: tracks when `nodeup upgrade` is mid-migration.
 //
 // When `nodeup upgrade` starts a migration that involves snapshotting global
 // npm packages, installing new Node versions, and restoring packages onto

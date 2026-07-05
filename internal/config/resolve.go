@@ -68,8 +68,10 @@ func applyOverlay(dst *Config, src *Overlay) {
 // Resolve can distinguish "user said no" from "user said nothing".
 //
 // Build one Overlay per source (CLI, env, file). Pass all of them to
-// Resolve. The file overlay is normally built by FileOverlay(*Config)
-// from a loaded Config, which marks every present field as set.
+// Resolve. The file overlay is normally built by FileOverlayFromNode
+// (see internal/config/fileoverlay.go) from a loaded Config and its
+// parsed yaml.Node; that form preserves "key absent" vs "key present
+// with zero value" — a distinction FileOverlay alone cannot make.
 type Overlay struct {
 	C *Config
 
@@ -89,36 +91,6 @@ type Overlay struct {
 
 // NewOverlay returns an empty Overlay (no fields set).
 func NewOverlay() *Overlay { return &Overlay{C: &Config{}} }
-
-// FileOverlay returns an Overlay that marks every field of cfg as set.
-// This is the right way to turn a loaded Config into the "file" layer
-// for Resolve — it preserves explicit zeros like track.lts: false.
-//
-// Nil cfg produces an overlay that sets nothing.
-//
-// Caveat: yaml.v3 cannot distinguish "key absent" from "key present
-// with zero value" for non-pointer fields, so a few set-flags use a
-// heuristic ("non-zero means set"). Manager empty-string is treated
-// as "not set" — meaning `manager: ""` in the file behaves like
-// omitting `manager` entirely. That matches the docs, which only
-// define "empty Manager" to mean auto-detect.
-func FileOverlay(cfg *Config) *Overlay {
-	if cfg == nil {
-		return NewOverlay()
-	}
-	o := &Overlay{C: cfg}
-	o.ManagerSet = cfg.Manager != ""
-	o.TrackLTSSet = true
-	o.TrackCurrentSet = true
-	o.PackagesMigrateSet = true
-	o.PackagesStrategySet = cfg.Packages.Strategy != ""
-	o.PackagesSkipSet = cfg.Packages.Skip != nil
-	o.CleanupAutoSet = true
-	o.CleanupPromptSet = true
-	o.CacheTTLSet = cfg.Cache.TTL != 0
-	o.SchemaVersionSet = cfg.SchemaVersion != 0
-	return o
-}
 
 // SetManager records an explicit manager override.
 func (o *Overlay) SetManager(name string) {
