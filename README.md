@@ -150,8 +150,9 @@ Expand-Archive nodeup.zip -DestinationPath .
 go install github.com/dipto0321/nodeup/cmd/nodeup@latest
 ```
 
-Requires Go 1.22+. Best for: `nodeup` contributors and anyone who
-wants to track `main` between releases.
+Requires Go 1.24+ (matches `go.mod` and the CI pin). Best for:
+`nodeup` contributors and anyone who wants to track `main` between
+releases.
 
 ## Quickstart
 
@@ -243,19 +244,24 @@ See [`docs/configuration.md`](./docs/configuration.md) for the full schema.
 
 ## Project status
 
-This is the **v1.0.0 development line**. See `CHANGELOG.md` for what's done.
+Current release: **v1.1.0** (`nodeupx@1.0.1` on npm — the npm wrapper
+trails the Go binary by one publish). See `CHANGELOG.md` for the
+v1.0.0 → v1.1.0 history.
 
-| Version | Status | Notes |
+| Phase | Status | What shipped |
 |---|---|---|
-| v1.0.0 | 🛠 in development | Phase 1 ✅ — 8/8 managers detected. Phase 2 ✅ — `nodeup check` with nodejs.org/dist/index.json fetch + TTL cache. Phase 3 ✅ — package snapshot/restore + migration report. Phase 4 ✅ — end-to-end `nodeup upgrade`. Phase 5 ✅ — YAML config file + `config` subcommands (show / get / set / init). Phase 6 ✅ — cross-platform polish: `QuotePath` for paths with spaces, interrupted-upgrade sentinel + replay, system-node classifier with warnings. Phase 7 🔧 (in progress) — post-upgrade cleanup prompt (`--cleanup` / `--cleanup-version` / `--no-cleanup` / `cleanup.auto` / `cleanup.prompt`) plus native mutation commands for all 7 supported managers have shipped. Distribution packaging (GoReleaser + brew/scoop taps + npm wrapper) is the remaining Phase 7 work — see issues #17 and #18. |
+| 1 — Detector engine | ✅ | 8/8 managers detected (`fnm`, `nvm`, `Volta`, `asdf`, `mise`, `n`, `nodenv`, `nvm-windows`) |
+| 2 — Node version API | ✅ | `nodeup check` + nodejs.org/dist/index.json fetch + TTL cache + HTTP retry/backoff/timeout |
+| 3 — Package snapshot/restore | ✅ | `nodeup packages {snapshot,restore,diff}` + interrupted-upgrade sentinel + MigrationReport |
+| 4 — Upgrade command | ✅ | End-to-end `nodeup upgrade` with snapshot → install → migrate → cleanup |
+| 5 — Config subsystem | ✅ | YAML config at `~/.nodeup/config.yaml` + `config {show,get,set,init}` + env vars |
+| 6 — Cross-platform polish | ✅ | `QuotePath`, interrupted-upgrade replay, system-node classifier, lock file |
+| 7 — Distribution packaging | ✅ | GoReleaser + brew tap + Scoop bucket + npm wrapper (`nodeupx` via OIDC Trusted Publishing) |
+| 8 — First tagged release | ✅ | `v1.0.0` shipped (PR #35); `v1.1.0` shipped with the `internal/ui` rollout (`#117`/`#118`/`#119`) |
 
-Phase 1 is the **detection surface** — every manager is recognized and the
-version + installed-list reads return real data (PRs #1–#8). Subsequent
-phases layer commands on top: `nodeup check` (Phase 2) → `nodeup packages`
-(Phase 3) → `nodeup upgrade` end-to-end (Phase 4) → `nodeup config`
-(Phase 5) → cross-platform polish (Phase 6) → first tagged release
-(Phase 7). The v1.0.0 cut is blocked on Phase 7 (issue #17) and the
-release-prep runbook (issue #18).
+**Release train:** every `v*.*.*` tag triggers GoReleaser → brew formula
+push → Scoop manifest push → `nodeupx` publish via OIDC. To ship a
+new version: see `docs/release-checklist.md`.
 
 ## Docs index
 

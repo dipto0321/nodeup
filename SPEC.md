@@ -1,8 +1,9 @@
 # SPEC — nodeup
 
 Distilled from code (README, CLAUDE.md, CONTRIBUTING.md, docs/*, and
-`internal/*` source). Last refresh: 2026-07-05 (post #103 fix-wave;
-§C/V2 + §T updated to match current state).
+`internal/*` source). Last refresh: 2026-07-05 (post v1.1.0 release;
+§C/§I/§V/§T updated to match current state — `internal/ui` rollout
+complete via #117/#118/#119, #120/#121 are commitlint relaxations).
 Caveman encoding per FORMAT.md convention (not present at repo root —
 using shapes from the caveman skill).
 
@@ -26,8 +27,9 @@ manual steps, single static binary, no Node runtime dependency.
   `/` or `\`.
 - `*_windows.go` → `//go:build windows`; other files compile ∀ 3 OS
   (macOS, Linux, Windows).
-- ∀ user-facing output → `internal/ui` (scaffold merged via #74 PR1;
-  spinners + huh prompts + full call-site migration tracked by #105).
+- ∀ user-facing output → `internal/ui` (Writer + Plain/Fancy modes +
+  bubbletea spinners + huh prompts + full call-site migration shipped
+  via #74 → #117 → #118 → #119).
 - packages `{npm, corepack, npx}` ⊥ migrate (bundled w/ Node itself).
 - Manager resolution order: `--manager` flag → `~/.nodeup/config.yaml` →
   env vars → PATH → well-known dirs.
@@ -62,9 +64,9 @@ manual steps, single static binary, no Node runtime dependency.
 ## §V Invariants
 
 - V1: ∀ shell exec → `platform.RunShell()` | `RunShellScript()` (never raw `os/exec`).
-- V2: ∀ user-facing string → `internal/ui` (partial — scaffold via #74 PR1;
-  full migration tracked by #105; cmd.Printf still present in upgrade/check/
-  list/packages/config/cleanup).
+- V2: ∀ user-facing string → `internal/ui` (complete — full migration
+  shipped via #119; every `cmd.Printf` / `fmt.Fprintf` call site in
+  `internal/cli/*` now flows through `ui.Writer`).
 - V3: ∀ error return → handled, wrapped w/ `%w` for context.
 - V4: ∀ cobra `RunE` → `cmd.Context()`, ⊥ `context.Background()`.
 - V5: ∀ path → `filepath.Join()`, ⊥ hardcoded separators.
@@ -116,10 +118,10 @@ T14|x|fail closed (not open) when Current() errors during cleanup|V14,#58,#87
 T15|x|verify/fix `n` manager's reliance on `n current` subcommand|#59,#88
 T16|x|fix cleanup docs inaccuracies (CHANGELOG issue ref, nvm-windows note, PATH failure mode, Phase 7 conflict)|#60,#97
 T17|x|dead-code cleanup: report.go, FileOverlay(), confirm var, fnm.go error wrap, nvm Current() test gap|#61,#98
-T18|.|design + implement internal/ui output layer|V2,#74,#105
-T19|.|fix double-prompt + sticky-no-override at cleanup decision point|#76,#95
+T18|x|design + implement internal/ui output layer|V2,#74,#105,#117,#118,#119
+T19|x|fix double-prompt + sticky-no-override at cleanup decision point|#76,#95
 T20|x|rest of cleanup/chore/ci/release batch|#62-#69,#89-#94,#99,#100,#107-#109
-T21|.|doc drift: CLAUDE.md ui/lipgloss/phase-table stale; SPEC §T stale|#106
+T21|x|doc drift: CLAUDE.md ui/lipgloss/phase-table stale; SPEC §T stale|#106
 
 ## §B Bugs
 
