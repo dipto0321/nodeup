@@ -1,24 +1,16 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
-	"io"
 	"sort"
+	"strings"
 
 	"github.com/Masterminds/semver/v3"
 
 	"github.com/dipto0321/nodeup/internal/config"
 	"github.com/dipto0321/nodeup/internal/detector"
+	"github.com/dipto0321/nodeup/internal/ui"
 )
-
-// cleanupIO holds the input and output streams for a cleanup prompt
-// run. Tests inject pipes here so they can drive stdin / capture
-// stdout without touching the real terminal.
-type cleanupIO struct {
-	in  *bufio.Reader
-	out io.Writer
-}
 
 // cleanupDecision captures the user's answers to the post-upgrade
 // prompt, so the caller (upgrade.go) can either confirm or skip.
@@ -143,7 +135,15 @@ type cleanupFailure struct {
 //
 // Parameters:
 //
-//   - cfg      — behavior toggles (AutoDeleteAll / PerVersion /
+//   - p         — ui.Prompt, mode-resolved by the caller. FancyMode
+//     gets huh.Select/huh.Confirm; PlainMode gets the in-package
+//     line-reader fallback. The CLI layer constructs this once per
+//     command so we don't re-TTY-probe inside cleanup.go.
+//   - w         — ui.Writer for emitting Info / Success / Warn lines
+//     (e.g., "Deleted v22", "Cleanup skipped"). Kept separate from
+//     `p` because the writer targets stdout/stderr while the prompt
+//     targets stdin/stdout; a single ui.Prompt would conflate them.
+//   - cfg       — behavior toggles (AutoDeleteAll / PerVersion /
 //     NonInteractive / Prefiltered). All derived from CLI flags +
 //     config file before this call.
 //   - toInstall — the versions nodeup just installed (LTS + Current).
@@ -154,11 +154,10 @@ type cleanupFailure struct {
 //     the OLD default before we set a new one). Excluded from
 //     candidates so the user's shell doesn't break.
 //   - m        — the manager implementation, used for Uninstall().
-//   - io       — input/output streams. Tests inject pipes here.
 //
 // Errors from individual Uninstall() calls are collected but do NOT
 // stop the loop — one failed delete doesn't block the next attempt.
-func runCleanupPrompt(cfg cleanupConfig, toInstall, installed []semver.Version, active semver.Version, m detector.Manager, streams cleanupIO) (cleanupResult, error) {
+func runCleanupPrompt(p ui.Prompt, w ui.Writer, cfg cleanupConfig, toInstall, installed []semver.Version, active semver.Version, m detector.Manager) (cleanupResult, error) {
 	var result cleanupResult
 
 	// Step 1: Non-interactive skip.
@@ -181,9 +180,9 @@ func runCleanupPrompt(cfg cleanupConfig, toInstall, installed []semver.Version, 
 	// new Current, active}.
 	candidates := cleanupCandidates(toInstall, installed, active)
 	if len(candidates) == 0 {
-		// Nothing eligible to delete — print a friendly note and
-		// return success.
-		fmt.Fprintln(streams.out, "No old versions to clean up.")
+		if w != nil {
+			w.Info("No old versions to clean up.")
+		}
 		return result, nil
 	}
 
@@ -194,29 +193,35 @@ func runCleanupPrompt(cfg cleanupConfig, toInstall, installed []semver.Version, 
 		// actually in the candidate set.
 		toOffer = intersectCandidates(candidates, cfg.Prefiltered)
 		if len(toOffer) == 0 {
-			fmt.Fprintln(streams.out, "No matching versions to clean up.")
+			if w != nil {
+				w.Info("No matching versions to clean up.")
+			}
 			return result, nil
 		}
 	} else if !cfg.AutoDeleteAll {
 		// Default path: prompt "delete all old versions? [y/N]"
-		decision, err := promptAllOrNothing(candidates, streams)
+		decision, err := promptAllOrNothing(p, w, candidates)
 		if err != nil {
 			return result, fmt.Errorf("cleanup prompt: %w", err)
 		}
 		if decision.skip {
-			fmt.Fprintln(streams.out, "Cleanup skipped.")
+			if w != nil {
+				w.Info("Cleanup skipped.")
+			}
 			return result, nil
 		}
 		if !decision.deleteAll && decision.deleteOne == "" {
-			// User pressed something we didn't understand; treat as skip.
-			fmt.Fprintln(streams.out, "Cleanup skipped (unrecognized answer).")
+			if w != nil {
+				w.Info("Cleanup skipped (unrecognized answer).")
+			}
 			return result, nil
 		}
 		if decision.deleteOne != "" {
-			// User picked a specific version by number.
 			v, perr := semver.NewVersion(decision.deleteOne)
 			if perr != nil || !inCandidates(*v, candidates) {
-				fmt.Fprintln(streams.out, "Cleanup skipped (invalid version choice).")
+				if w != nil {
+					w.Info("Cleanup skipped (invalid version choice).")
+				}
 				return result, nil
 			}
 			toOffer = []semver.Version{*v}
@@ -230,39 +235,16 @@ func runCleanupPrompt(cfg cleanupConfig, toInstall, installed []semver.Version, 
 		toOffer = candidates
 	}
 
-	// Step 4: Per-version loop.
-	//
-	// Per-version confirmation is "sticky-up" only — once the user
-	// has explicitly opted into deletion at a higher level (the
-	// all-or-nothing prompt's `deleteAll` or `deleteOne`, or a
-	// pre-flagged `--cleanup` / `--yes` / `--cleanup-version` /
-	// `cfg.Cleanup.Auto`), we MUST NOT re-prompt per version. The
-	// old behavior (a second `Delete vX? [y/N]` for each candidate,
-	// where empty / non-y input silently skipped the deletion) was
-	// a real regression: users who answered `y` once at the
-	// all-or-nothing prompt would see nothing deleted if their
-	// terminal session's input stream ended before they re-answered
-	// for every candidate. The fix is to set `cfg.PerVersion = false`
-	// for the loop once a higher-level confirmation has been
-	// recorded. The ForcePerVersion downgrade (Step 1b) is the only
-	// path that keeps per-version on, because it represents an
-	// inability to safely exclude the active version — see #58.
+	// Step 4: Per-version loop. (See sticky-up note in cleanup.go
+	// history.) ForcePerVersion keeps cfg.PerVersion = true at this
+	// point; everything else gets downgraded to false so users
+	// who answered "y" once don't have to re-answer per candidate.
 	if !cfg.ForcePerVersion {
-		// Higher-level confirmation → no per-version prompt.
-		// ForcePerVersion explicitly overrides this in Step 1b
-		// by setting `cfg.PerVersion = true`, so by the time we
-		// reach here, the only configs that still have
-		// PerVersion=true are (a) a default-true cfg.Cleanup.Prompt
-		// without any higher-level confirmation (e.g. an empty
-		// cfg.Prefiltered + a user who answered `n`/`skip` — but
-		// that case returns before reaching Step 4) or (b) the
-		// ForcePerVersion downgrade. Path (b) is the one we want
-		// to preserve; path (a) can't reach Step 4.
 		cfg.PerVersion = false
 	}
 	for _, v := range toOffer {
 		if cfg.PerVersion {
-			answer, err := promptPerVersion(v, streams)
+			answer, err := promptPerVersion(p, w, v)
 			if err != nil {
 				result.Failed = append(result.Failed, cleanupFailure{v, err})
 				continue
@@ -275,11 +257,15 @@ func runCleanupPrompt(cfg cleanupConfig, toInstall, installed []semver.Version, 
 
 		if err := m.Uninstall(v); err != nil {
 			result.Failed = append(result.Failed, cleanupFailure{v, err})
-			fmt.Fprintf(streams.out, "  Failed to delete %s: %v\n", v, err)
+			if w != nil {
+				w.Warn(fmt.Sprintf("Failed to delete %s: %v", v, err))
+			}
 			continue
 		}
 		result.Deleted = append(result.Deleted, v)
-		fmt.Fprintf(streams.out, "  Deleted %s\n", v)
+		if w != nil {
+			w.Success(fmt.Sprintf("Deleted %s", v))
+		}
 	}
 
 	return result, nil
@@ -359,115 +345,74 @@ func inCandidates(v semver.Version, candidates []semver.Version) bool {
 //	empty / n / N    — skip
 //	anything else    — re-prompt (we give one re-prompt then skip)
 //
-// Reads a single line from `in` (ignoring trailing newline). Returns
-// the decision and any I/O error.
-func promptAllOrNothing(candidates []semver.Version, streams cleanupIO) (cleanupDecision, error) {
-	fmt.Fprintf(streams.out, "\nOld Node.js versions still on disk (%d):\n", len(candidates))
-	for _, v := range candidates {
-		fmt.Fprintf(streams.out, "  v%s\n", v)
+// The "delete one specific version" path now goes through
+// ui.Prompt.Select with a labeled option list, replacing the
+// previous "type a version string" pattern. This matches what
+// huh.Select does in FancyMode (arrow-key navigation over a list
+// of options) and keeps the PlainMode UX consistent — same
+// numbered list either way.
+//
+// Returns the decision and any I/O error.
+func promptAllOrNothing(p ui.Prompt, w ui.Writer, candidates []semver.Version) (cleanupDecision, error) {
+	if w != nil {
+		w.Info(fmt.Sprintf("Old Node.js versions still on disk (%d):", len(candidates)))
+		for _, v := range candidates {
+			w.Println(fmt.Sprintf("  v%s", v))
+		}
+		w.Println("")
+		w.Println("What would you like to do?")
 	}
-	fmt.Fprintln(streams.out, "")
-	fmt.Fprintln(streams.out, "What would you like to do?")
-	fmt.Fprintln(streams.out, "  y       Delete all of the above")
-	fmt.Fprintln(streams.out, "  <num>   Delete one specific version (e.g. 22.11.0)")
-	fmt.Fprintln(streams.out, "  N       Skip cleanup")
 
-	// First attempt
-	line, err := readPromptLine(streams)
+	// Build the option list. The numeric prefix is rendered by
+	// ui.Prompt.Select itself (huh does it in FancyMode; the
+	// plain fallback does it in PlainMode) so we don't prefix
+	// here.
+	options := []string{"Delete all of the above", "Skip cleanup"}
+	for _, v := range candidates {
+		options = append(options, fmt.Sprintf("Delete v%s", v))
+	}
+
+	picked, err := p.Select("Choose an action:", options, options[1]) // default: "Skip cleanup"
 	if err != nil {
 		return cleanupDecision{}, err
 	}
-	answer := normalizeAnswer(line)
-	switch answer {
-	case "y", "yes":
+
+	switch picked {
+	case options[0]:
 		return cleanupDecision{deleteAll: true}, nil
-	case "", "n", "no":
+	case options[1]:
+		return cleanupDecision{skip: true}, nil
+	default:
+		// Strip the "Delete v" prefix to recover the version.
+		if rest, ok := strings.CutPrefix(picked, "Delete v"); ok {
+			return cleanupDecision{deleteOne: rest}, nil
+		}
+		// Defensive: shouldn't happen if Select returned one of our
+		// options, but if it didn't we treat as skip rather than
+		// nuking the user's Node installs.
 		return cleanupDecision{skip: true}, nil
 	}
-	// Treat a version-like answer as a one-shot specific-version pick.
-	// We accept anything that has at least one digit, since the printed
-	// versions are bare semvers.
-	if v, perr := semver.NewVersion(answer); perr == nil {
-		return cleanupDecision{deleteOne: v.String()}, nil
-	}
-	// Garbage input: re-prompt once.
-	fmt.Fprintln(streams.out, "(Please answer y, a specific version, or N.)")
-	line2, err := readPromptLine(streams)
-	if err != nil {
-		return cleanupDecision{}, err
-	}
-	answer2 := normalizeAnswer(line2)
-	switch answer2 {
-	case "y", "yes":
-		return cleanupDecision{deleteAll: true}, nil
-	case "", "n", "no":
-		return cleanupDecision{skip: true}, nil
-	}
-	if v, perr := semver.NewVersion(answer2); perr == nil {
-		return cleanupDecision{deleteOne: v.String()}, nil
-	}
-	// Still unrecognized — treat as skip.
-	return cleanupDecision{skip: true}, nil
 }
 
 // promptPerVersion prints "Delete vX.Y.Z? [y/N]" and reads one line.
 // Returns true on y/Y/yes (case-insensitive), false on anything
 // else (including empty input).
-func promptPerVersion(v semver.Version, streams cleanupIO) (bool, error) {
-	fmt.Fprintf(streams.out, "Delete v%s? [y/N] ", v)
-	line, err := readPromptLine(streams)
+func promptPerVersion(p ui.Prompt, w ui.Writer, v semver.Version) (bool, error) {
+	question := fmt.Sprintf("Delete v%s?", v)
+	// We rely on ui.Prompt.Confirm to render the [y/N] hint for
+	// PlainMode; the huh-backed FancyMode renders its own toggle
+	// label. Callers pass a real Writer (not nil) when they want
+	// surface messages; we use it here to print the question line
+	// in case the prompt's internal rendering puts the question
+	// in an unexpected place on this terminal.
+	if w != nil {
+		w.Println(question + " [y/N]")
+	}
+	got, err := p.Confirm(question, false)
 	if err != nil {
 		return false, err
 	}
-	switch normalizeAnswer(line) {
-	case "y", "yes":
-		return true, nil
-	default:
-		return false, nil
-	}
-}
-
-// readPromptLine reads one trimmed line from `in`. We use a buffered
-// reader rather than bufio.Scanner because Scanner drops trailing
-// tokens on long lines (>64 KiB) — pathological for an `nodeup`
-// prompt but worth handling defensively.
-func readPromptLine(streams cleanupIO) (string, error) {
-	line, err := streams.in.ReadString('\n')
-	if err != nil && err != io.EOF {
-		return "", err
-	}
-	// Strip trailing \r\n or \n.
-	line = trimNewline(line)
-	return line, nil
-}
-
-func trimNewline(s string) string {
-	for s != "" && (s[len(s)-1] == '\n' || s[len(s)-1] == '\r') {
-		s = s[:len(s)-1]
-	}
-	return s
-}
-
-// normalizeAnswer lower-cases and trims the input.
-func normalizeAnswer(s string) string {
-	out := make([]byte, 0, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 'a' - 'A'
-		}
-		out = append(out, c)
-	}
-	// Trim leading/trailing spaces (manual loop avoids pulling in
-	// strings just for this hot-path helper).
-	start, end := 0, len(out)
-	for start < end && (out[start] == ' ' || out[start] == '\t') {
-		start++
-	}
-	for end > start && (out[end-1] == ' ' || out[end-1] == '\t') {
-		end--
-	}
-	return string(out[start:end])
+	return got, nil
 }
 
 // formatCleanupResult renders the post-prompt summary the upgrade
