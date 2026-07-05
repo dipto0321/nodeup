@@ -37,7 +37,12 @@ internal/packages/         npm global snapshot / restore / migrate (merged in PR
 internal/platform/
   platform.go              DataDir(), SnapshotsDir(), CacheDir(), LockPath(), IsWindows(), …
   shell.go                 RunShell() — all shell exec goes here
-internal/ui/               scaffold (mode.go + theme.go + writer.go) merged via #74 PR1; spinners/huh/full migration tracked by #105
+internal/ui/               single source of truth for user-facing output
+  mode.go                  Mode (PlainMode / FancyMode) + DecideMode (TTY + NO_COLOR + --no-color gating)
+  theme.go                 DefaultTheme — lipgloss styles for FancyWriter
+  writer.go                Writer interface + PlainWriter / FancyWriter implementations
+  spinner.go               bubbletea-backed braille spinner for long-running steps
+  prompt.go                huh-backed Confirm / Select helpers for interactive flows
 ```
 
 ## Key invariants — read before writing code
@@ -52,9 +57,9 @@ internal/ui/               scaffold (mode.go + theme.go + writer.go) merged via 
 
 **Platform-specific code:** Use `//go:build windows` build tags on `*_windows.go` files. Files without build tags must compile on all three OSes.
 
-**Dependencies:** No new dependencies without a rationale line in the PR body. Core runtime deps: `cobra`, `Masterminds/semver/v3`, `yaml.v3`, `lipgloss` (for `internal/ui` — see #74). Planned but not yet in `go.mod`: `huh`, `bubbletea` (the remaining Charm stack for `internal/ui` spinners + prompts — see #105).
+**Dependencies:** No new dependencies without a rationale line in the PR body. Core runtime deps: `cobra`, `Masterminds/semver/v3`, `yaml.v3`, plus the Charm stack for `internal/ui`: `lipgloss` (styling), `bubbletea` (spinner), `huh` (prompts). The plain-vs-fancy switch is the single decision point — see `internal/ui/mode.go`.
 
-**Manager detection order:** `--manager` flag → `~/.nodeup/config.yaml` → auto-detect (env vars → PATH → well-known dirs). `DetectAll()` returns a `Registry`; `ResolveManager(reg, preferred)` picks one or errors. When multiple managers found and no preference, the caller should use `ResolveInteractive` (planned under #105 as part of the `huh` migration).
+**Manager detection order:** `--manager` flag → `~/.nodeup/config.yaml` → auto-detect (env vars → PATH → well-known dirs). `DetectAll()` returns a `Registry`; `ResolveManager(reg, preferred)` picks one or errors. When multiple managers found and no preference, the caller should use `ResolveInteractive` (a `huh`-backed Select that lives in `internal/detector/interactive.go` — wired up by #118 as part of the `huh` migration).
 
 **Packages to skip during migration:** `npm`, `corepack`, `npx` — these are bundled with Node and must not be migrated.
 
@@ -127,8 +132,8 @@ orchestrator.
 | 4 — Upgrade command + UI | Done | merged |
 | 5 — Config subsystem | Done | merged |
 | 6 — Cross-platform polish | Done | merged (interrupted-upgrade sentinel, `QuotePath`, system-node classifier) |
-| 7 — Distribution packaging | Done | GoReleaser, brew/scoop/npm wrappers all shipped (#17, #18); manual v1.0.0 npm publish tracked by #35 |
-| 8 — v1.0.0 release | Done | `nodeupx@1.0.1` live on npm (closes #35); trusted-publisher OIDC flow in place for future tags |
+| 7 — Distribution packaging | Done | GoReleaser, brew/scoop/npm wrappers all shipped (#17, #18); manual v1.0.0 npm publish (#35) bootstrapped the OIDC trust |
+| 8 — v1.0.0 → v1.1.0 releases | Done | `nodeupx@1.0.1` (and now `@1.1.0` matching the Go binary) live on npm; trusted-publisher OIDC flow active for every tag (`#109`) |
 
 ## On-disk data layout
 

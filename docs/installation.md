@@ -139,7 +139,7 @@ self-contained — no runtime, no Node, no manager.
 go install github.com/dipto0321/nodeup/cmd/nodeup@latest
 ```
 
-Requires Go 1.22+.
+Requires Go 1.24+ (matches `go.mod` and the CI pin in `.github/workflows/ci.yml` + `release.yml`).
 
 **Who this is for:** `nodeup` contributors and Go developers who want
 to track `main` between tagged releases. The binary lands in

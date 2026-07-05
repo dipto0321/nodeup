@@ -6,7 +6,7 @@ opening an issue or a PR.
 
 ## Quick orientation
 
-- **Language / runtime:** Go 1.22+
+- **Language / runtime:** Go 1.24+
 - **Architecture:** see the `How it works` section in [`README.md`](./README.md)
   for the high-level pipeline. The single source of truth for implementation
   details is the Go source under `internal/` plus inline godoc.
@@ -123,7 +123,7 @@ by hand in PRs.
 - **Feature requests:** use `.github/ISSUE_TEMPLATE/feature_request.md`.
   Read the in-template "Out-of-scope check" before filing — `.nvmrc` /
   `.node-version` management, `npm`-itself updates, `yarn`/`pnpm`
-  globals, and self-updates are explicitly out of scope for v1.
+  globals, and self-updates are explicitly out of scope for v1.x.
 - **Security issues:** do **not** open a public issue. Email the
   maintainer directly (see GitHub profile) and give 90 days for a
   coordinated fix.
@@ -139,11 +139,6 @@ by hand in PRs.
   `fmt.Println` from business logic. This keeps output testable and
   uniform (color, spinners, summary tables).
 - **No new dependencies without a rationale line in the PR body.** We
-  lean on the stdlib + cobra + yaml.v3.
-
-## Sign-off (future)
-
-When the project gains external contributors, we'll require a
-[DCO](https://developercertificateoforigin.org/) sign-off (`Signed-off-by:`
-trailer on every commit). Not required today; will be enabled by a
-`.github/workflows/dco.yml` check before the v1.0.0 release.
+  lean on the stdlib + `cobra` + `yaml.v3` + the Charm stack
+  (`lipgloss`, `bubbletea`, `huh` — all of which live behind the
+  `internal/ui` boundary).

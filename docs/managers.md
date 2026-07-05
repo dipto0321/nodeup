@@ -77,7 +77,7 @@ bin dir (e.g., `fnm env --use-on-cd | source`, or add
 points at a binary inside the manager's data dir, nodeup's next
 run will classify it as `manager` and proceed without warning.
 
-> _Status: Phase 7 in progress — post-upgrade cleanup prompt and per-manager native mutation commands have shipped (PR #56 / issue #41). Distribution packaging (GoReleaser, brew/scoop taps, npm wrapper) is the remaining Phase 7 work — see issues #17 and #18. README's "Phase 7 ✅" line refers to the cleanup/mutation work, not the distribution work._
+> _Status: Phase 7 complete. Post-upgrade cleanup prompt, per-manager native mutation commands, and full distribution packaging (GoReleaser, brew/scoop taps, npm wrapper at `nodeupx@1.0.1` via OIDC Trusted Publishing) have all shipped — see `CHANGELOG.md` for the v1.0.0 → v1.1.0 history._
 
 ## Post-upgrade cleanup
 
