@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/dipto0321/nodeup/internal/detector"
 	"github.com/dipto0321/nodeup/internal/node"
+	"github.com/dipto0321/nodeup/internal/ui"
 )
 
 // systemNodeJSON describes the on-disk `node` binary found on PATH,
@@ -101,14 +103,15 @@ func runCheck(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	w := writerFromCmd(cmd)
 	if asJSON {
-		return outputCheckJSON(cmd, lts, current, installed, sysNode)
+		return outputCheckJSON(w, cmd.Context(), lts, current, installed, sysNode)
 	}
 
-	return outputCheckTable(cmd, lts, current, installed, sysNode)
+	return outputCheckTable(w, cmd.Context(), lts, current, installed, sysNode)
 }
 
-func outputCheckJSON(cmd *cobra.Command, lts, current *node.ManifestVersion, installed detector.Registry, sysNode *systemNodeJSON) error {
+func outputCheckJSON(w ui.Writer, ctx context.Context, lts, current *node.ManifestVersion, installed detector.Registry, sysNode *systemNodeJSON) error {
 	type checkOutput struct {
 		LTS        *node.ManifestVersion `json:"lts"`
 		Current    *node.ManifestVersion `json:"current"`
@@ -117,8 +120,8 @@ func outputCheckJSON(cmd *cobra.Command, lts, current *node.ManifestVersion, ins
 	}
 
 	installedVersions := make([]string, 0)
-	for _, m := range installed.Found {
-		versions, err := m.ListInstalled(cmd.Context())
+	for _, mgr := range installed.Found {
+		versions, err := mgr.ListInstalled(ctx)
 		if err != nil {
 			continue
 		}
@@ -138,27 +141,27 @@ func outputCheckJSON(cmd *cobra.Command, lts, current *node.ManifestVersion, ins
 	if err != nil {
 		return err
 	}
-	cmd.Println(string(data))
+	w.Println(string(data))
 	return nil
 }
 
-func outputCheckTable(cmd *cobra.Command, lts, current *node.ManifestVersion, installed detector.Registry, sysNode *systemNodeJSON) error {
-	cmd.Println()
-	cmd.Printf("  LTS:     %s (released %s)\n", lts.Version, lts.Date)
-	cmd.Printf("  Current: %s (released %s)\n", current.Version, current.Date)
-	cmd.Println()
+func outputCheckTable(w ui.Writer, ctx context.Context, lts, current *node.ManifestVersion, installed detector.Registry, sysNode *systemNodeJSON) error {
+	w.Println("")
+	w.Info(fmt.Sprintf("  LTS:     %s (released %s)", lts.Version, lts.Date))
+	w.Info(fmt.Sprintf("  Current: %s (released %s)", current.Version, current.Date))
+	w.Println("")
 
 	if len(installed.Found) == 0 {
-		cmd.Println("No Node.js version manager detected.")
+		w.Info("No Node.js version manager detected.")
 	} else {
-		cmd.Println("Installed versions:")
-		for _, m := range installed.Found {
-			versions, err := m.ListInstalled(cmd.Context())
+		w.Println("Installed versions:")
+		for _, mgr := range installed.Found {
+			versions, err := mgr.ListInstalled(ctx)
 			if err != nil {
-				cmd.Printf("  - %s: [error listing versions]\n", m.Name())
+				w.Warn(fmt.Sprintf("  - %s: [error listing versions]", mgr.Name()))
 				continue
 			}
-			cmd.Printf("  - %s: %s\n", m.Name(), formatVersions(versions))
+			w.Info(fmt.Sprintf("  - %s: %s", mgr.Name(), formatVersions(versions)))
 		}
 	}
 
@@ -166,18 +169,18 @@ func outputCheckTable(cmd *cobra.Command, lts, current *node.ManifestVersion, in
 	// the probe didn't run (or `which node` failed) — we say so
 	// explicitly rather than staying silent, so the user has a
 	// single source of truth for what nodeup sees.
-	cmd.Println()
+	w.Println("")
 	if sysNode == nil {
-		cmd.Println("System node:  (could not probe `node` on PATH)")
+		w.Info("System node:  (could not probe `node` on PATH)")
 		return nil
 	}
 	switch sysNode.Kind {
 	case "manager":
-		cmd.Printf("System node:  %s (managed by %s)\n", sysNode.Path, sysNode.Manager)
+		w.Info(fmt.Sprintf("System node:  %s (managed by %s)", sysNode.Path, sysNode.Manager))
 	case "unknown":
 		// Path matched no known layout. Don't print a long warning
 		// here — `nodeup upgrade` is where the warning belongs.
-		cmd.Printf("System node:  %s (unrecognized layout)\n", sysNode.Path)
+		w.Info(fmt.Sprintf("System node:  %s (unrecognized layout)", sysNode.Path))
 	default:
 		// OS-package / snap / flatpak / homebrew-core. Render the
 		// same warning text that `nodeup upgrade` would print, so
@@ -193,7 +196,7 @@ func outputCheckTable(cmd *cobra.Command, lts, current *node.ManifestVersion, in
 		// Indent each rendered line by two spaces so it lines up
 		// with the rest of the table block.
 		for _, line := range strings.Split(strings.TrimRight(buf.String(), "\n"), "\n") {
-			cmd.Printf("  %s\n", line)
+			w.Info("  " + line)
 		}
 	}
 

@@ -14,8 +14,11 @@ import (
 )
 
 // newBufCmd returns a *cobra.Command with its output redirected to an
-// in-memory buffer. Cobra's Println et al. write to OutOrStdout(); by
-// overriding it we capture output without touching the real terminal.
+// in-memory buffer. Cobra's Println et al. write to OutOrStdout();
+// Warn/Error route to ErrOrStderr. We redirect BOTH to the same
+// buffer so test assertions can verify everything in one place —
+// this matters now that the cli migrated to ui.Writer, which
+// routes warn/error to ErrOrStderr.
 //
 // We construct a bare Cobra command here rather than going through
 // NewRootCmd so the list tests stay independent of the full command
@@ -25,6 +28,7 @@ func newBufCmd(t *testing.T) (*cobra.Command, *bytes.Buffer) {
 	var buf bytes.Buffer
 	c := &cobra.Command{Use: "test"}
 	c.SetOut(&buf)
+	c.SetErr(&buf)
 	return c, &buf
 }
 
@@ -190,7 +194,7 @@ func TestRegistryNames_OrderingPreserved(t *testing.T) {
 func TestOutputListJSON_HappyPath(t *testing.T) {
 	cmd, buf := newBufCmd(t)
 	cur := "20.18.0"
-	if err := outputListJSON(cmd, listOutputJSON{
+	if err := outputListJSON(writerFromCmd(cmd), listOutputJSON{
 		Installed: []installedEntryJSON{
 			{Manager: "fnm", Versions: []string{"18.20.4", "20.18.0", "22.11.0"}},
 			{Manager: "volta", Versions: []string{"20.11.0"}},
@@ -220,7 +224,7 @@ func TestOutputListJSON_HappyPath(t *testing.T) {
 
 func TestOutputListJSON_OmitEmptyCurrent(t *testing.T) {
 	cmd, buf := newBufCmd(t)
-	if err := outputListJSON(cmd, listOutputJSON{
+	if err := outputListJSON(writerFromCmd(cmd), listOutputJSON{
 		Installed: []installedEntryJSON{{Manager: "fnm"}},
 	}); err != nil {
 		t.Fatalf("outputListJSON: %v", err)
@@ -233,7 +237,7 @@ func TestOutputListJSON_OmitEmptyCurrent(t *testing.T) {
 
 func TestOutputListJSON_OmitEmptyError(t *testing.T) {
 	cmd, buf := newBufCmd(t)
-	if err := outputListJSON(cmd, listOutputJSON{
+	if err := outputListJSON(writerFromCmd(cmd), listOutputJSON{
 		Installed: []installedEntryJSON{{Manager: "fnm", Versions: []string{"20.0.0"}}},
 	}); err != nil {
 		t.Fatalf("outputListJSON: %v", err)
@@ -247,7 +251,7 @@ func TestOutputListJSON_OmitEmptyError(t *testing.T) {
 
 func TestOutputListTable_Empty(t *testing.T) {
 	cmd, buf := newBufCmd(t)
-	if err := outputListTable(cmd, nil); err != nil {
+	if err := outputListTable(writerFromCmd(cmd), nil); err != nil {
 		t.Fatalf("outputListTable: %v", err)
 	}
 	out := buf.String()
@@ -267,7 +271,7 @@ func TestOutputListTable_MixedStates(t *testing.T) {
 		{Manager: "volta"}, // neither versions nor error — falls through with "(no versions installed)"
 		{Manager: "asdf", Error: "boom"},
 	}
-	if err := outputListTable(cmd, entries); err != nil {
+	if err := outputListTable(writerFromCmd(cmd), entries); err != nil {
 		t.Fatalf("outputListTable: %v", err)
 	}
 	out := buf.String()
