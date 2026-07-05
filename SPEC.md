@@ -1,7 +1,8 @@
 # SPEC — nodeup
 
 Distilled from code (README, CLAUDE.md, CONTRIBUTING.md, docs/*, and
-`internal/*` source) on 2026-07-02, post-merge of PR #56 (`5ddbe43`).
+`internal/*` source). Last refresh: 2026-07-05 (post #103 fix-wave;
+§C/V2 + §T updated to match current state).
 Caveman encoding per FORMAT.md convention (not present at repo root —
 using shapes from the caveman skill).
 
@@ -25,9 +26,8 @@ manual steps, single static binary, no Node runtime dependency.
   `/` or `\`.
 - `*_windows.go` → `//go:build windows`; other files compile ∀ 3 OS
   (macOS, Linux, Windows).
-- ∀ user-facing output → `internal/ui` (? not yet implemented — currently
-  direct `cmd.Printf`/`fmt.Fprintf` throughout `internal/cli`, tolerated
-  as pre-`ui`-package debt).
+- ∀ user-facing output → `internal/ui` (scaffold merged via #74 PR1;
+  spinners + huh prompts + full call-site migration tracked by #105).
 - packages `{npm, corepack, npx}` ⊥ migrate (bundled w/ Node itself).
 - Manager resolution order: `--manager` flag → `~/.nodeup/config.yaml` →
   env vars → PATH → well-known dirs.
@@ -38,15 +38,16 @@ manual steps, single static binary, no Node runtime dependency.
 
 - cmd: `nodeup upgrade [--lts|--current|--dry-run|--yes|--no-migrate|--no-cleanup|--cleanup|--cleanup-version <v>|--manager <name>]`
 - cmd: `nodeup check [--json]`
-- cmd: `nodeup list [--json]` (? stub only, ⊥ implemented — see T4)
+- cmd: `nodeup list [--json]`
 - cmd: `nodeup packages {snapshot|restore [--from <path>]|diff}`
 - cmd: `nodeup config {show|get <key>|set <key> <val>|init [--force]}`
 - cmd: `nodeup version`
 - api: `GET https://nodejs.org/dist/index.json` → `Manifest ([]ManifestVersion)`
 - file: `~/.nodeup/config.yaml` (override: `$NODEUP_CONFIG`; home override: `$NODEUP_HOME`)
 - file: `<DataDir>/snapshots/<manager>-<node-version>.json`
+- file: `<DataDir>/reports/migration-<timestamp>.json` (one per upgrade, success or partial)
 - file: `<DataDir>/upgrade-in-progress.json` (sentinel)
-- file: `<DataDir>/nodeup.lock` (? built, ⊥ wired — see T3)
+- file: `<DataDir>/nodeup.lock`
 - env: `NODEUP_MANAGER`, `NODEUP_TRACK_LTS`, `NODEUP_TRACK_CURRENT`,
   `NODEUP_PACKAGES_MIGRATE`, `NODEUP_PACKAGES_STRATEGY`,
   `NODEUP_CACHE_TTL`, `NODEUP_CONFIG`, `NODEUP_HOME`
@@ -61,7 +62,9 @@ manual steps, single static binary, no Node runtime dependency.
 ## §V Invariants
 
 - V1: ∀ shell exec → `platform.RunShell()` | `RunShellScript()` (never raw `os/exec`).
-- V2: ∀ user-facing string → `internal/ui` (? aspirational, see §C).
+- V2: ∀ user-facing string → `internal/ui` (partial — scaffold via #74 PR1;
+  full migration tracked by #105; cmd.Printf still present in upgrade/check/
+  list/packages/config/cleanup).
 - V3: ∀ error return → handled, wrapped w/ `%w` for context.
 - V4: ∀ cobra `RunE` → `cmd.Context()`, ⊥ `context.Background()`.
 - V5: ∀ path → `filepath.Join()`, ⊥ hardcoded separators.
@@ -91,29 +94,32 @@ manual steps, single static binary, no Node runtime dependency.
   so version strings are safe as shell args by construction.
 - V21: lock file (`<DataDir>/nodeup.lock`) ! held around any critical
   section that mutates installed Node versions or the config file
-  concurrently (? built but not wired — see T3).
+  concurrently.
 
 ## §T Tasks
 
 id|status|task|cites
-T1|.|fix snapshot/restore version-key mismatch in upgrade flow|V13,#42
-T2|.|fix NVM_DIR shell-injection surface (QuotePath doesn't escape `$`/backtick)|V15,#43
-T3|.|wire AcquireLock/Release into upgrade + config set/init|V21,#44
-T4|.|implement `nodeup list` (currently a stub)|I.list,#45
-T5|.|fix installPackages abort-on-first-failure; wire or delete MigrationReport|V19,#46
-T6|.|fix sentinel lifecycle (deleted on restore failure; never cleared after manual restore)|#47
-T7|.|add HTTP timeout/retry/context + atomic cache write to node manifest fetch|#48
-T8|.|fix `context.Background()` → `cmd.Context()` in internal/cli/packages.go|V4,#49
-T9|.|fix asdf ASDF_DIR vs ASDF_DATA_DIR inconsistency (docs + system_node.go)|V7,#50
-T10|.|validate manager-name arg against allowlist in packages restore/diff|V5,#51
-T11|.|add context.Context param to Manager interface methods|V4,#53
-T12|.|refresh CLAUDE.md known-bugs section + phase-status table|#54
-T13|.|fix `--yes` silently overriding `--no-cleanup`|V16,V18,#57
-T14|.|fail closed (not open) when Current() errors during cleanup|V14,#58
-T15|.|verify/fix `n` manager's reliance on `n current` subcommand|#59
-T16|.|fix cleanup docs inaccuracies (CHANGELOG issue ref, nvm-windows note, PATH failure mode, Phase 7 conflict)|#60
-T17|.|dead-code cleanup: report.go, FileOverlay(), confirm var, fnm.go error wrap, nvm Current() test gap|#61
-T18|.|design + implement internal/ui output layer|V2,#74
+T1|x|fix snapshot/restore version-key mismatch in upgrade flow|V13,#42,#77
+T2|x|fix NVM_DIR shell-injection surface (QuotePath doesn't escape `$`/backtick)|V15,#43,#78
+T3|x|wire AcquireLock/Release into upgrade + config set/init|V21,#44,#79
+T4|x|implement `nodeup list` (currently a stub)|I.list,#45,#80
+T5|x|fix installPackages abort-on-first-failure; wire or delete MigrationReport|V19,#46,#103
+T6|x|fix sentinel lifecycle (deleted on restore failure; never cleared after manual restore)|#47,#81
+T7|x|add HTTP timeout/retry/context + atomic cache write to node manifest fetch|#48,#82
+T8|x|fix `context.Background()` → `cmd.Context()` in internal/cli/packages.go|V4,#49,#83
+T9|x|fix asdf ASDF_DIR vs ASDF_DATA_DIR inconsistency (docs + system_node.go)|V7,#50,#84
+T10|x|validate manager-name arg against allowlist in packages restore/diff|V5,#51,#85
+T11|x|add context.Context param to Manager interface methods|V4,#53,#101
+T12|x|refresh CLAUDE.md known-bugs section + phase-status table|#54,#96
+T13|x|fix `--yes` silently overriding `--no-cleanup`|V16,V18,#57,#86
+T14|x|fail closed (not open) when Current() errors during cleanup|V14,#58,#87
+T15|x|verify/fix `n` manager's reliance on `n current` subcommand|#59,#88
+T16|x|fix cleanup docs inaccuracies (CHANGELOG issue ref, nvm-windows note, PATH failure mode, Phase 7 conflict)|#60,#97
+T17|x|dead-code cleanup: report.go, FileOverlay(), confirm var, fnm.go error wrap, nvm Current() test gap|#61,#98
+T18|.|design + implement internal/ui output layer|V2,#74,#105
+T19|.|fix double-prompt + sticky-no-override at cleanup decision point|#76,#95
+T20|x|rest of cleanup/chore/ci/release batch|#62-#69,#89-#94,#99,#100,#107-#109
+T21|.|doc drift: CLAUDE.md ui/lipgloss/phase-table stale; SPEC §T stale|#106
 
 ## §B Bugs
 
