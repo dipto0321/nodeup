@@ -96,6 +96,13 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// on disk so a follow-up `nodeup packages restore --from <path>`
 	// (the command printed by PersistentPreRunE's hint) can still find
 	// the resume breadcrumb. See issue #46.
+	//
+	// "Failure" here includes PARTIAL failure: if one or more packages
+	// failed to install but the loop did complete (which it now does —
+	// see #103), restoreSucceeded stays false. The MigrationReport file
+	// is written either way; the sentinel only clears on a fully-successful
+	// migration so a follow-up `nodeup packages restore --from <path>`
+	// remains available to retry just the failed packages.
 	sentinelArmed := false
 	restoreSucceeded := false
 	defer func() {
@@ -306,13 +313,63 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// sentinel already records this snapshot path for
 	// replay-after-interrupt (`nodeup packages restore --from
 	// <sentinel path>`); here we read the same path directly.
+	//
+	// installPackages now LOOP-ALL (see issue #103): a single failing
+	// package no longer aborts the rest of the migration. We collect
+	// the per-package results, persist a MigrationReport to
+	// <DataDir>/reports/ on both success and partial failure, and
+	// surface the report path so the user knows what to re-install
+	// by hand if anything failed. Partial failure keeps the sentinel
+	// armed (restoreSucceeded stays false) so the user can re-run
+	// `nodeup packages restore --from <snapshot>` to retry just the
+	// failures.
 	if !skipMigrate && len(toInstall) > 0 {
 		if restoreSnapshotPath == "" {
 			cmd.Printf("Warning: no snapshot path available to restore from; skipping package migration\n")
-		} else if err := packages.RestoreFromSnapshot(cmd.Context(), restoreSnapshotPath); err != nil {
-			cmd.Printf("Warning: restore failed: %v\n", err)
 		} else {
-			restoreSucceeded = true
+			outcome, rerr := packages.RestoreFromSnapshot(cmd.Context(), restoreSnapshotPath)
+
+			// Write a MigrationReport whenever we actually attempted at
+			// least one package. Skipping the write on empty results
+			// avoids producing a useless "0 packages attempted" file
+			// for a fresh install with no globals. On a context
+			// cancellation, results may be truncated; we still record
+			// whatever we managed to install, with Interrupted=true so
+			// the report is self-describing.
+			if len(outcome.Results) > 0 {
+				// Prefer the snapshot's recorded manager / from-version
+				// if present (the upgrade flow wrote the snapshot with
+				// these fields populated, so this is more accurate than
+				// the CLI's inferred values).
+				reportMgr := outcome.Snapshot.Manager
+				if reportMgr == "" {
+					reportMgr = m.Name()
+				}
+				reportFrom := outcome.Snapshot.NodeVersion
+				if reportFrom == "" {
+					reportFrom = oldVersion
+				}
+				report := packages.NewMigrationReport(reportMgr, reportFrom, toInstall[len(toInstall)-1].String())
+				report.Interrupted = errors.Is(rerr, context.Canceled) || errors.Is(rerr, context.DeadlineExceeded)
+				for _, res := range outcome.Results {
+					report.AddResult(res)
+				}
+				if saveErr := report.Save(); saveErr != nil {
+					cmd.Printf("Warning: failed to write migration report: %v\n", saveErr)
+				} else if reportPath, perr := report.Path(); perr == nil {
+					if rerr != nil {
+						cmd.Printf("Migration report: %s (partial — see file for failures)\n", reportPath)
+					} else {
+						cmd.Printf("Migration report: %s\n", reportPath)
+					}
+				}
+			}
+
+			if rerr != nil {
+				cmd.Printf("Warning: restore failed: %v\n", rerr)
+			} else {
+				restoreSucceeded = true
+			}
 		}
 	}
 

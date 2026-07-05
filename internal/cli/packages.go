@@ -160,12 +160,52 @@ func runRestore(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// writeReport persists a MigrationReport so the user has a record
+	// of what migrated. We only write when at least one package was
+	// attempted — skipping the write on an empty results slice avoids
+	// producing a useless "0 packages attempted" file for fresh installs
+	// with no globals. The snapshot's recorded Manager / NodeVersion
+	// are preferred over the CLI's inferred values when present, so the
+	// --from branch (which has no CLI-side manager argument) gets an
+	// accurate report.
+	writeReport := func(snapshot packages.SnapshotData, fallbackMgr, fallbackFrom string, results []packages.PackageResult) {
+		if len(results) == 0 {
+			return
+		}
+		mgr := snapshot.Manager
+		if mgr == "" {
+			mgr = fallbackMgr
+		}
+		fromVer := snapshot.NodeVersion
+		if fromVer == "" {
+			fromVer = fallbackFrom
+		}
+		report := packages.NewMigrationReport(mgr, fromVer, "")
+		for _, r := range results {
+			report.AddResult(r)
+		}
+		if err := report.Save(); err != nil {
+			cmd.Printf("Warning: failed to write migration report: %v\n", err)
+			return
+		}
+		if p, perr := report.Path(); perr == nil {
+			cmd.Printf("Migration report: %s\n", p)
+		}
+	}
+
 	// --from branch: read the path straight off disk, no manager or
 	// version parsing required.
 	if fromPath != "" {
-		if err := packages.RestoreFromSnapshot(ctx, fromPath); err != nil {
+		outcome, err := packages.RestoreFromSnapshot(ctx, fromPath)
+		if err != nil {
+			// Even on partial failure, persist whatever results we
+			// collected so the user has a file to inspect — the
+			// returned slice still contains entries for every package
+			// attempted, including failures (status="failed").
+			writeReport(outcome.Snapshot, "", "", outcome.Results)
 			return fmt.Errorf("restore failed: %w", err)
 		}
+		writeReport(outcome.Snapshot, "", "", outcome.Results)
 		clearSentinel()
 		cmd.Printf("Restored packages from %s\n", fromPath)
 		return nil
@@ -192,9 +232,15 @@ func runRestore(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid version: %w", err)
 	}
 
-	if err := packages.Restore(ctx, managerName, *v); err != nil {
+	outcome, err := packages.Restore(ctx, managerName, *v)
+	if err != nil {
+		// Partial failure: persist a report (with the manager name
+		// and source version so the user can correlate) so they know
+		// which packages to retry.
+		writeReport(outcome.Snapshot, managerName, versionStr, outcome.Results)
 		return fmt.Errorf("restore failed: %w", err)
 	}
+	writeReport(outcome.Snapshot, managerName, versionStr, outcome.Results)
 	clearSentinel()
 
 	cmd.Printf("Restored packages for %s %s\n", managerName, versionStr)
