@@ -67,8 +67,14 @@ Example:
 // back to a PlainMode writer backed by cmd.OutOrStdout/ErrOrStderr so
 // tests still get sensible output.
 func writerFromCmd(cmd *cobra.Command) ui.Writer {
-	if v, ok := cmd.Context().Value(writerCtxKey{}).(ui.Writer); ok && v != nil {
-		return v
+	// cobra's Context() panics when called on a Command that was
+	// never SetContext'd — which is the case for many unit tests
+	// that build a bare cobra.Command. Guard the lookup so the
+	// fallback path below always works.
+	if ctx := cmd.Context(); ctx != nil {
+		if v, ok := ctx.Value(writerCtxKey{}).(ui.Writer); ok && v != nil {
+			return v
+		}
 	}
 	out := cmd.OutOrStdout()
 	errOut := cmd.ErrOrStderr()

@@ -108,7 +108,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	defer func() {
 		if sentinelArmed && restoreSucceeded {
 			if err := packages.RemoveSentinel(); err != nil {
-				cmd.Printf("Warning: failed to remove upgrade sentinel: %v\n", err)
+				writerFromCmd(cmd).Warn(fmt.Sprintf("Warning: failed to remove upgrade sentinel: %v", err))
 			}
 		}
 	}()
@@ -138,7 +138,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("resolve manager: %w", err)
 	}
-	cmd.Printf("Using manager: %s\n", m.Name())
+	writerFromCmd(cmd).Info(fmt.Sprintf("Using manager: %s", m.Name()))
 
 	// Probe the system Node BEFORE we start touching anything. If it
 	// turns out `node` on PATH is owned by the OS package manager, snap,
@@ -232,9 +232,9 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	}
 
 	if dryRun {
-		cmd.Println("Dry run - would install:")
+		writerFromCmd(cmd).Println("Dry run - would install:")
 		for _, v := range toInstall {
-			cmd.Printf("  - %s\n", v)
+			writerFromCmd(cmd).Info(fmt.Sprintf("  - %s", v))
 		}
 		return nil
 	}
@@ -256,7 +256,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	}
 	defer func() {
 		if rerr := upgradeLock.Release(); rerr != nil {
-			cmd.Printf("Warning: failed to release upgrade lock: %v\n", rerr)
+			writerFromCmd(cmd).Warn(fmt.Sprintf("Warning: failed to release upgrade lock: %v", rerr))
 		}
 	}()
 
@@ -287,7 +287,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			}
 			label := fmt.Sprintf("Snapshotting globals (%s)", ver)
 			if serr := ui.WaitWithSpinner(ctx, spinnerFor(cmd, label), take); serr != nil {
-				cmd.Printf("Warning: snapshot failed for %s: %v\n", ver, serr)
+				writerFromCmd(cmd).Warn(fmt.Sprintf("Warning: snapshot failed for %s: %v", ver, serr))
 			}
 		}
 		if len(installedVersions) > 0 {
@@ -323,7 +323,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			NewVersion:   newVersion,
 			SnapshotPath: restoreSnapshotPath,
 		}); err != nil {
-			cmd.Printf("Warning: failed to write upgrade sentinel: %v\n", err)
+			writerFromCmd(cmd).Warn(fmt.Sprintf("Warning: failed to write upgrade sentinel: %v", err))
 		} else {
 			sentinelArmed = true
 		}
@@ -381,7 +381,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// failures.
 	if !skipMigrate && len(toInstall) > 0 {
 		if restoreSnapshotPath == "" {
-			cmd.Printf("Warning: no snapshot path available to restore from; skipping package migration\n")
+			writerFromCmd(cmd).Warn("Warning: no snapshot path available to restore from; skipping package migration")
 		} else {
 			// Snapshot path → restore. The restore step runs `npm
 			// install -g <pkg>` per captured global, so for users with
@@ -435,18 +435,18 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 					report.AddResult(res)
 				}
 				if saveErr := report.Save(); saveErr != nil {
-					cmd.Printf("Warning: failed to write migration report: %v\n", saveErr)
+					writerFromCmd(cmd).Warn(fmt.Sprintf("Warning: failed to write migration report: %v", saveErr))
 				} else if reportPath, perr := report.Path(); perr == nil {
 					if rerr != nil {
-						cmd.Printf("Migration report: %s (partial — see file for failures)\n", reportPath)
+						writerFromCmd(cmd).Warn(fmt.Sprintf("Migration report: %s (partial — see file for failures)", reportPath))
 					} else {
-						cmd.Printf("Migration report: %s\n", reportPath)
+						writerFromCmd(cmd).Info(fmt.Sprintf("Migration report: %s", reportPath))
 					}
 				}
 			}
 
 			if rerr != nil {
-				cmd.Printf("Warning: restore failed: %v\n", rerr)
+				writerFromCmd(cmd).Warn(fmt.Sprintf("Warning: restore failed: %v", rerr))
 			} else {
 				restoreSucceeded = true
 			}
@@ -478,7 +478,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			// this, a user running `--cleanup` would suddenly see
 			// per-version y/N prompts for the very first time and
 			// have no idea why. See #58.
-			cmd.Printf("Warning: could not determine the currently-active Node version (%v); cleanup will require per-version confirmation for safety.\n", currentErr)
+			writerFromCmd(cmd).Warn(fmt.Sprintf("Warning: could not determine the currently-active Node version (%v); cleanup will require per-version confirmation for safety.", currentErr))
 		}
 
 		// Build a values slice from the toInstall pointers so the
@@ -511,14 +511,14 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		)
 		if cerr != nil {
 			// Non-fatal: log and proceed to the success message.
-			cmd.Printf("Warning: cleanup encountered an error: %v\n", cerr)
+			writerFromCmd(cmd).Warn(fmt.Sprintf("Warning: cleanup encountered an error: %v", cerr))
 		}
 		if summary := formatCleanupResult(result); summary != "" {
-			cmd.Printf("Cleanup: %s\n", summary)
+			writerFromCmd(cmd).Info(fmt.Sprintf("Cleanup: %s", summary))
 		}
 	}
 
-	cmd.Printf("Upgrade complete!\n")
+	writerFromCmd(cmd).Success("Upgrade complete!")
 	return nil
 }
 

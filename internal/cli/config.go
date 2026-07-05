@@ -71,7 +71,8 @@ to a file as a starting point for a new config.`,
 					return fmt.Errorf("marshal config: %w", err)
 				}
 				path, _ := config.DefaultPath()
-				fmt.Fprintf(cmd.OutOrStdout(), "# effective config (source: %s)\n%s", path, out)
+				w := writerFromCmd(cmd)
+				w.Println(fmt.Sprintf("# effective config (source: %s)\n%s", path, out))
 				return nil
 			})
 		},
@@ -95,7 +96,7 @@ func newConfigGetCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				fmt.Fprintln(cmd.OutOrStdout(), v)
+				writerFromCmd(cmd).Println(v)
 				return nil
 			})
 		},
@@ -137,7 +138,7 @@ func newConfigSetCmd() *cobra.Command {
 			}
 			defer func() {
 				if rerr := configLock.Release(); rerr != nil {
-					fmt.Fprintf(cmd.OutOrStdout(), "Warning: failed to release config lock: %v\n", rerr)
+					writerFromCmd(cmd).Warn(fmt.Sprintf("Warning: failed to release config lock: %v", rerr))
 				}
 			}()
 
@@ -170,7 +171,7 @@ func newConfigSetCmd() *cobra.Command {
 			if err := config.Save(path, current); err != nil {
 				return fmt.Errorf("save config to %s: %w", path, err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "set %s=%s (saved to %s)\n", args[0], args[1], path)
+			writerFromCmd(cmd).Success(fmt.Sprintf("set %s=%s (saved to %s)", args[0], args[1], path))
 			return nil
 		},
 	}
@@ -204,7 +205,7 @@ to overwrite an existing file unless --force is passed.`,
 			}
 			defer func() {
 				if rerr := configLock.Release(); rerr != nil {
-					fmt.Fprintf(cmd.OutOrStdout(), "Warning: failed to release config lock: %v\n", rerr)
+					writerFromCmd(cmd).Warn(fmt.Sprintf("Warning: failed to release config lock: %v", rerr))
 				}
 			}()
 
@@ -217,7 +218,7 @@ to overwrite an existing file unless --force is passed.`,
 			if err := config.Save(path, cfg); err != nil {
 				return fmt.Errorf("save config to %s: %w", path, err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "wrote scaffolded config to %s\n", path)
+			writerFromCmd(cmd).Success(fmt.Sprintf("wrote scaffolded config to %s", path))
 			return nil
 		},
 	}

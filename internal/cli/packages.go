@@ -57,7 +57,7 @@ func runSnapshot(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("snapshot failed: %w", err)
 	}
 
-	cmd.Printf("Snapshot saved for %s %s\n", m.Name(), version)
+	writerFromCmd(cmd).Success(fmt.Sprintf("Snapshot saved for %s %s", m.Name(), version))
 	return nil
 }
 
@@ -87,14 +87,14 @@ func runPackagesList(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(snapshots) == 0 {
-		cmd.Println("No snapshots found.")
+		writerFromCmd(cmd).Info("No snapshots found.")
 		return nil
 	}
 
 	for _, s := range snapshots {
-		cmd.Printf("\n%s (Node %s):\n", s.Manager, s.NodeVersion)
+		writerFromCmd(cmd).Info(fmt.Sprintf("%s (Node %s):", s.Manager, s.NodeVersion))
 		for _, p := range s.Packages {
-			cmd.Printf("  - %s@%s\n", p.Name, p.Version)
+			writerFromCmd(cmd).Info(fmt.Sprintf("  - %s@%s", p.Name, p.Version))
 		}
 	}
 	return nil
@@ -156,7 +156,7 @@ func runRestore(cmd *cobra.Command, args []string) error {
 	// packages — has already been achieved.
 	clearSentinel := func() {
 		if err := packages.RemoveSentinel(); err != nil {
-			cmd.Printf("Warning: failed to clear upgrade sentinel: %v\n", err)
+			writerFromCmd(cmd).Warn(fmt.Sprintf("Warning: failed to clear upgrade sentinel: %v", err))
 		}
 	}
 
@@ -185,11 +185,11 @@ func runRestore(cmd *cobra.Command, args []string) error {
 			report.AddResult(r)
 		}
 		if err := report.Save(); err != nil {
-			cmd.Printf("Warning: failed to write migration report: %v\n", err)
+			writerFromCmd(cmd).Warn(fmt.Sprintf("Warning: failed to write migration report: %v", err))
 			return
 		}
 		if p, perr := report.Path(); perr == nil {
-			cmd.Printf("Migration report: %s\n", p)
+			writerFromCmd(cmd).Info(fmt.Sprintf("Migration report: %s", p))
 		}
 	}
 
@@ -207,7 +207,7 @@ func runRestore(cmd *cobra.Command, args []string) error {
 		}
 		writeReport(outcome.Snapshot, "", "", outcome.Results)
 		clearSentinel()
-		cmd.Printf("Restored packages from %s\n", fromPath)
+		writerFromCmd(cmd).Success(fmt.Sprintf("Restored packages from %s", fromPath))
 		return nil
 	}
 
@@ -243,7 +243,7 @@ func runRestore(cmd *cobra.Command, args []string) error {
 	writeReport(outcome.Snapshot, managerName, versionStr, outcome.Results)
 	clearSentinel()
 
-	cmd.Printf("Restored packages for %s %s\n", managerName, versionStr)
+	writerFromCmd(cmd).Success(fmt.Sprintf("Restored packages for %s %s", managerName, versionStr))
 	return nil
 }
 
@@ -277,14 +277,14 @@ func runDiff(cmd *cobra.Command, args []string) error {
 
 	added, removed := packages.DiffSnapshots(s1.Packages, s2.Packages)
 
-	cmd.Printf("Added packages:\n")
+	writerFromCmd(cmd).Println("Added packages:")
 	for _, p := range added {
-		cmd.Printf("  + %s@%s\n", p.Name, p.Version)
+		writerFromCmd(cmd).Info(fmt.Sprintf("  + %s@%s", p.Name, p.Version))
 	}
 
-	cmd.Printf("Removed packages:\n")
+	writerFromCmd(cmd).Println("Removed packages:")
 	for _, p := range removed {
-		cmd.Printf("  - %s@%s\n", p.Name, p.Version)
+		writerFromCmd(cmd).Info(fmt.Sprintf("  - %s@%s", p.Name, p.Version))
 	}
 
 	return nil

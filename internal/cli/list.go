@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dipto0321/nodeup/internal/detector"
+	"github.com/dipto0321/nodeup/internal/ui"
 )
 
 // installedEntryJSON is a single manager's contributions to the
@@ -122,38 +123,39 @@ func runList(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	w := writerFromCmd(cmd)
 	if asJSON {
-		return outputListJSON(cmd, listOutputJSON{Installed: entries, Current: active})
+		return outputListJSON(w, listOutputJSON{Installed: entries, Current: active})
 	}
-	return outputListTable(cmd, entries)
+	return outputListTable(w, entries)
 }
 
-func outputListJSON(cmd *cobra.Command, out listOutputJSON) error {
+func outputListJSON(w ui.Writer, out listOutputJSON) error {
 	data, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		return err
 	}
-	cmd.Println(string(data))
+	w.Println(string(data))
 	return nil
 }
 
-func outputListTable(cmd *cobra.Command, entries []installedEntryJSON) error {
-	cmd.Println()
+func outputListTable(w ui.Writer, entries []installedEntryJSON) error {
+	w.Println("")
 	if len(entries) == 0 {
-		cmd.Println("No Node.js version manager detected.")
-		cmd.Println("Install one of: fnm, nvm, Volta, asdf, mise, n, nodenv, nvm-windows.")
+		w.Info("No Node.js version manager detected.")
+		w.Info("Install one of: fnm, nvm, Volta, asdf, mise, n, nodenv, nvm-windows.")
 		return nil
 	}
 	for _, e := range entries {
 		if e.Error != "" {
-			cmd.Printf("  %s: [error listing versions: %s]\n", e.Manager, e.Error)
+			w.Warn(fmt.Sprintf("  %s: [error listing versions: %s]", e.Manager, e.Error))
 			continue
 		}
 		if len(e.Versions) == 0 {
-			cmd.Printf("  %s: (no versions installed)\n", e.Manager)
+			w.Info(fmt.Sprintf("  %s: (no versions installed)", e.Manager))
 			continue
 		}
-		cmd.Printf("  %s: %s\n", e.Manager, formatListVersions(e.Versions))
+		w.Info(fmt.Sprintf("  %s: %s", e.Manager, formatListVersions(e.Versions)))
 	}
 	return nil
 }
