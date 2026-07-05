@@ -21,7 +21,7 @@ go test ./internal/detector/... -run TestNvm  # single test
 cmd/nodeup/main.go         entrypoint; injects version/commit/date via ldflags
 internal/cli/              cobra command wiring — thin layer, delegates to internal/
   root.go                  NewRootCmd; registers all subcommands
-  upgrade.go               nodeup upgrade (Phase 4, PR #20 open)
+  upgrade.go               nodeup upgrade (Phase 4, merged)
   check.go / list.go / packages.go / config.go / version.go
 internal/detector/         Manager interface + one file per manager
   detector.go              DetectAll(), ResolveManager()
@@ -30,12 +30,14 @@ internal/node/
   dist.go                  nodejs.org/dist/index.json client + 24h TTL cache
 internal/packages/         npm global snapshot / restore / migrate (merged in PR #19)
   snapshot.go              Snapshot(ctx, managerName, version) → ~/.../snapshots/<mgr>-<ver>.json
-                          Restore(ctx, managerName, version)
-                          RestoreFromSnapshot(ctx, path)
+                          Restore(ctx, managerName, version) ([]PackageResult, error)
+                          RestoreFromSnapshot(ctx, path) ([]PackageResult, error)
+  report.go                MigrationReport: per-package results, Save() → ~/.../reports/migration-<ts>.json
+  sentinel.go              UpgradeSentinel: in-progress marker for interrupted-upgrade replay
 internal/platform/
   platform.go              DataDir(), SnapshotsDir(), CacheDir(), LockPath(), IsWindows(), …
   shell.go                 RunShell() — all shell exec goes here
-internal/ui/               (planned, not yet implemented) all user-facing output
+internal/ui/               scaffold (mode.go + theme.go + writer.go) merged via #74 PR1; spinners/huh/full migration tracked by #105
 ```
 
 ## Key invariants — read before writing code
@@ -50,9 +52,9 @@ internal/ui/               (planned, not yet implemented) all user-facing output
 
 **Platform-specific code:** Use `//go:build windows` build tags on `*_windows.go` files. Files without build tags must compile on all three OSes.
 
-**Dependencies:** No new dependencies without a rationale line in the PR body. Core runtime deps: `cobra`, `Masterminds/semver/v3`, `yaml.v3`. Planned but not yet in `go.mod`: `huh`, `bubbletea`, `lipgloss` (the Charm stack for `internal/ui` — see #74).
+**Dependencies:** No new dependencies without a rationale line in the PR body. Core runtime deps: `cobra`, `Masterminds/semver/v3`, `yaml.v3`, `lipgloss` (for `internal/ui` — see #74). Planned but not yet in `go.mod`: `huh`, `bubbletea` (the remaining Charm stack for `internal/ui` spinners + prompts — see #105).
 
-**Manager detection order:** `--manager` flag → `~/.nodeup/config.yaml` → auto-detect (env vars → PATH → well-known dirs). `DetectAll()` returns a `Registry`; `ResolveManager(reg, preferred)` picks one or errors. When multiple managers found and no preference, the caller should use `ResolveInteractive` (not yet implemented).
+**Manager detection order:** `--manager` flag → `~/.nodeup/config.yaml` → auto-detect (env vars → PATH → well-known dirs). `DetectAll()` returns a `Registry`; `ResolveManager(reg, preferred)` picks one or errors. When multiple managers found and no preference, the caller should use `ResolveInteractive` (planned under #105 as part of the `huh` migration).
 
 **Packages to skip during migration:** `npm`, `corepack`, `npx` — these are bundled with Node and must not be migrated.
 
@@ -125,8 +127,8 @@ orchestrator.
 | 4 — Upgrade command + UI | Done | merged |
 | 5 — Config subsystem | Done | merged |
 | 6 — Cross-platform polish | Done | merged (interrupted-upgrade sentinel, `QuotePath`, system-node classifier) |
-| 7 — Distribution packaging | In progress | partial — post-upgrade cleanup prompt merged; GoReleaser/brew/scoop/npm tracked by #17 / #18 |
-| 8 — v1.0.0 release | In progress | blocked on Phase 7 distribution (#17 / #18) |
+| 7 — Distribution packaging | Done | GoReleaser, brew/scoop/npm wrappers all shipped (#17, #18); manual v1.0.0 npm publish tracked by #35 |
+| 8 — v1.0.0 release | Done | `nodeupx@1.0.1` live on npm (closes #35); trusted-publisher OIDC flow in place for future tags |
 
 ## On-disk data layout
 
