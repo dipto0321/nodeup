@@ -225,8 +225,24 @@ func (v *VitePlus) Detect() bool {
 		if dir == "" {
 			continue
 		}
-		bin := filepath.Join(dir, "bin", "vp")
-		if _, err := os.Stat(bin); err == nil {
+		if vitePlusBinaryExists(filepath.Join(dir, "bin")) {
+			return true
+		}
+	}
+	return false
+}
+
+// vitePlusBinaryExists reports whether the `vp` binary lives in the
+// given bin directory.
+//
+// On Windows the executable carries a ".exe" suffix, so we check both
+// spellings. (exec.LookPath applies PATHEXT for PATH lookups, but a
+// direct filesystem check has to do it itself.) Checking both on every
+// platform costs one extra stat and keeps the behavior identical
+// everywhere.
+func vitePlusBinaryExists(binDir string) bool {
+	for _, name := range []string{"vp", "vp.exe"} {
+		if _, err := os.Stat(filepath.Join(binDir, name)); err == nil {
 			return true
 		}
 	}

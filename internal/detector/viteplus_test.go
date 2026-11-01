@@ -483,6 +483,33 @@ func TestVitePlus_Detect_FindsBinaryInDataDir(t *testing.T) {
 	}
 }
 
+func TestVitePlusBinaryExists(t *testing.T) {
+	// The data-dir lookup is a plain filesystem stat, so it has to
+	// apply the Windows executable suffix itself (exec.LookPath does
+	// that via PATHEXT, but a direct stat does not).
+	binDir := t.TempDir()
+
+	if vitePlusBinaryExists(binDir) {
+		t.Error("vitePlusBinaryExists = true for an empty dir, want false")
+	}
+
+	// A bare "vp" is found on unix. On Windows the real binary is
+	// "vp.exe" — check both spellings so the helper's behavior is
+	// pinned identically on every OS.
+	for _, name := range []string{"vp", "vp.exe"} {
+		path := filepath.Join(binDir, name)
+		if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if !vitePlusBinaryExists(binDir) {
+			t.Errorf("vitePlusBinaryExists = false with %s present, want true", name)
+		}
+		if err := os.Remove(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 // --- vitePlusDataDirs ----------------------------------------------------
 
 // clearVitePlusEnv blanks every env var vitePlusDataDirs reads so a
