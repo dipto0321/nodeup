@@ -31,7 +31,7 @@ them over, and (optionally) cleans up — all interactively, all resumable.
 ## Features
 
 - 🔍 **Auto-detects** your Node.js version manager: `fnm`, `nvm`, `Volta`,
-  `asdf`, `mise`, `n`, `nodenv`, `nvm-windows`
+  `asdf`, `mise`, `n`, `nodenv`, `vite-plus`, `nvm-windows`
 - 📦 **Migrates global npm packages** across Node versions automatically
 - 🌍 **Cross-platform**: macOS, Linux, Windows (incl. ARM64)
 - 💾 **Single static binary** — no runtime, no npm dependency
@@ -250,7 +250,7 @@ v1.0.0 → v1.1.0 history.
 
 | Phase | Status | What shipped |
 |---|---|---|
-| 1 — Detector engine | ✅ | 8/8 managers detected (`fnm`, `nvm`, `Volta`, `asdf`, `mise`, `n`, `nodenv`, `nvm-windows`) |
+| 1 — Detector engine | ✅ | 9/9 managers detected (`fnm`, `nvm`, `Volta`, `asdf`, `mise`, `n`, `nodenv`, `vite-plus`, `nvm-windows`) |
 | 2 — Node version API | ✅ | `nodeup check` + nodejs.org/dist/index.json fetch + TTL cache + HTTP retry/backoff/timeout |
 | 3 — Package snapshot/restore | ✅ | `nodeup packages {snapshot,restore,diff}` + interrupted-upgrade sentinel + MigrationReport |
 | 4 — Upgrade command | ✅ | End-to-end `nodeup upgrade` with snapshot → install → migrate → cleanup |

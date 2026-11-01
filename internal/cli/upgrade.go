@@ -35,7 +35,7 @@ migrate your global npm packages across automatically.`,
 	cmd.Flags().Bool("no-cleanup", false, "skip the prompt to remove old versions")
 	cmd.Flags().Bool("cleanup", false, "auto-confirm the post-upgrade cleanup of old versions")
 	cmd.Flags().StringSlice("cleanup-version", nil, "specify version(s) to delete (repeatable; pairs with --cleanup)")
-	cmd.Flags().String("manager", "", "force a specific manager (fnm, nvm, volta, asdf, mise, n, nodenv)")
+	cmd.Flags().String("manager", "", "force a specific manager (fnm, nvm, volta, asdf, mise, n, nodenv, vite-plus)")
 	cmd.Flags().BoolP("yes", "y", false, "non-interactive, assume yes to all prompts")
 	cmd.Flags().Bool("offline", false, "use cached data, don't hit nodejs.org")
 

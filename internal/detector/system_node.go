@@ -504,6 +504,15 @@ func managerManagedRoots(m Manager) (roots []string, ok bool) {
 			return []string{filepath.Join(h, ".nodenv")}, true
 		}
 		return []string{}, true
+	case "vite-plus":
+		// Vite+ stores Node runtimes under its data directory:
+		// <data>/js_runtime/node/<v>/. The data directory resolves
+		// through VP_HOME → <home>/.vite-plus → VP_DATA_DIR → the
+		// XDG/platform default, so we hand back every candidate
+		// rather than just the first hit — the shell nodeup runs in
+		// may not carry the same Vite+ env vars that `vp` would
+		// resolve. See vitePlusDataDirs in viteplus.go.
+		return vitePlusDataDirs(), true
 	}
 	// nvm-windows, scoop, and any unknown manager: no recognized
 	// root pattern; fall through to path-based classification.

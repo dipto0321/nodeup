@@ -51,7 +51,7 @@ func newListCmd() *cobra.Command {
 		Use:   "list",
 		Short: "List installed Node.js versions via the detected manager",
 		Long: `List installed Node.js versions via the detected version manager
-(fnm, nvm, Volta, asdf, mise, n, nodenv, nvm-windows).
+(fnm, nvm, Volta, asdf, mise, n, nodenv, vite-plus, nvm-windows).
 
 With --json, emits a stable envelope consumable by jq/yq/etc. The
 human-readable default prints one line per detected manager with
@@ -60,7 +60,7 @@ versions sorted ascending.`,
 	}
 
 	cmd.Flags().Bool("json", false, "output as JSON")
-	cmd.Flags().String("manager", "", "force a specific manager (fnm, nvm, volta, asdf, mise, n, nodenv, nvm-windows); default is auto-detect")
+	cmd.Flags().String("manager", "", "force a specific manager (fnm, nvm, volta, asdf, mise, n, nodenv, vite-plus, nvm-windows); default is auto-detect")
 
 	return cmd
 }
@@ -143,7 +143,7 @@ func outputListTable(w ui.Writer, entries []installedEntryJSON) error {
 	w.Println("")
 	if len(entries) == 0 {
 		w.Info("No Node.js version manager detected.")
-		w.Info("Install one of: fnm, nvm, Volta, asdf, mise, n, nodenv, nvm-windows.")
+		w.Info("Install one of: fnm, nvm, Volta, asdf, mise, n, nodenv, vite-plus, nvm-windows.")
 		return nil
 	}
 	for _, e := range entries {

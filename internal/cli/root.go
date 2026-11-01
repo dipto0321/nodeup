@@ -53,9 +53,9 @@ func NewRootCmd(version, commit, date string) *cobra.Command {
 the manual churn.
 
 It auto-detects your version manager (fnm, nvm, Volta, asdf, mise, n,
-nodenv, nvm-windows), fetches the latest LTS and Current versions from
-nodejs.org, installs them, and migrates your global npm packages
-across so you don't lose anything.
+nodenv, vite-plus, nvm-windows), fetches the latest LTS and Current
+versions from nodejs.org, installs them, and migrates your global npm
+packages across so you don't lose anything.
 
 Common workflows:
   nodeup upgrade           Upgrade both LTS and Current

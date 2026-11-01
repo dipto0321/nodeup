@@ -58,8 +58,8 @@ manual steps, single static binary, no Node runtime dependency.
   `Install/Uninstall/Use/SetDefault(v semver.Version) error`,
   `GlobalNpmPrefix(v semver.Version) (string, error)`,
   `Current() (semver.Version, error)`
-- 8 managers implementing `Manager`: fnm, nvm, volta, asdf, mise, n,
-  nodenv, nvm-windows
+- 9 managers implementing `Manager`: fnm, nvm, volta, asdf, mise, n,
+  nodenv, vite-plus, nvm-windows
 
 ## §V Invariants
 
