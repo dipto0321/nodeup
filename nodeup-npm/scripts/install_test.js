@@ -54,7 +54,10 @@ const path = require('path');
 // If you change a helper in install.js, mirror the change here in
 // the `// --- mirrored from install.js ---` block below.
 
-const ALLOWED_REDIRECT_HOSTS = new Set(['objects.githubusercontent.com']);
+const ALLOWED_REDIRECT_HOSTS = new Set([
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+]);
 const MAX_REDIRECT_HOPS = 2;
 
 // --- mirrored from install.js: parseChecksumsTxt -------------------------
@@ -194,6 +197,25 @@ test('followHops_allowsGitHubToObjectsCdnRedirect', () => {
     [200]
   );
   assert.strictEqual(result.url, 'https://objects.githubusercontent.com/abc/checksums.txt');
+  assert.strictEqual(result.body, 'checksums body');
+});
+
+// followHops: a redirect to `release-assets.githubusercontent.com` is
+// accepted. GitHub moved release-asset serving to this host — observed
+// on v1.2.0 — and the wrapper's install path broke as a result: the
+// redirect was refused as "host not in the allowlist", so
+// `npm install -g nodeupx` failed outright. Regression guard.
+test('followHops_allowsGitHubToReleaseAssetsCdnRedirect', () => {
+  const result = followHopsTest(
+    'https://github.com/dipto0321/nodeup/releases/download/v1.2.0/checksums.txt',
+    MAX_REDIRECT_HOPS,
+    [
+      { status: 302, location: 'https://release-assets.githubusercontent.com/abc/checksums.txt' },
+      { status: 200, body: 'checksums body' },
+    ],
+    [200]
+  );
+  assert.strictEqual(result.url, 'https://release-assets.githubusercontent.com/abc/checksums.txt');
   assert.strictEqual(result.body, 'checksums body');
 });
 

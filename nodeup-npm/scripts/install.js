@@ -29,8 +29,8 @@
 //
 // Integrity / supply-chain hygiene (see #64):
 //   - The download URL follows one redirect via `request()`. Redirect
-//     targets must be on the `objects.githubusercontent.com` host
-//     (GitHub Releases' S3-backed CDN); any other host is rejected.
+//     targets must be on a GitHub-owned release-asset host (see
+//     ALLOWED_REDIRECT_HOSTS below); any other host is rejected.
 //     This blocks the trivial MITM-via-redirect attack surface.
 //   - Before extraction, we download `checksums.txt` from the same
 //     release tag, parse out the SHA256 for our exact archive name,
@@ -123,15 +123,31 @@ function archiveName(os, arch, version) {
 // keep them split so callers that already have a URL object don't pay
 // for the parse twice.
 
-// Allowed redirect targets: GitHub Releases redirects to their S3-
-// backed CDN. We allowlist that single host — anything else (a
-// compromised CDN, a TLS-stripping proxy, a typo in `Location`) is
-// rejected. See #64.
-const ALLOWED_REDIRECT_HOSTS = new Set(['objects.githubusercontent.com']);
+// Allowed redirect targets: GitHub Releases redirects release-asset
+// downloads to a GitHub-owned host. We allowlist those hosts — anything
+// else (a compromised CDN, a TLS-stripping proxy, a typo in `Location`)
+// is rejected. See #64.
+//
+// The host has changed over time:
+//   - `objects.githubusercontent.com` — the older S3-backed CDN.
+//   - `release-assets.githubusercontent.com` — the current host
+//     (observed on v1.2.0, 2026-11-01). GitHub moved release-asset
+//     serving here, and the wrapper's install path broke as a result:
+//     the redirect was refused as "host not in the allowlist", so
+//     `npm install -g nodeupx` failed outright.
+//
+// Both are GitHub-controlled, so allowing both keeps the redirect
+// allowlist intact (the security property #64 was after — an attacker
+// can't redirect the download to a host they control) while surviving
+// GitHub's CDN migration.
+const ALLOWED_REDIRECT_HOSTS = new Set([
+  'objects.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+]);
 
 // GitHub release URL → redirect target. Two hops is the known maximum
-// (`github.com` → `objects.githubusercontent.com`). Anything beyond
-// that is either a bug or an attack.
+// (`github.com` → the release-asset CDN host). Anything beyond that is
+// either a bug or an attack.
 const MAX_REDIRECT_HOPS = 2;
 
 function httpsGet(targetUrl) {
