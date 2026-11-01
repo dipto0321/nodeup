@@ -47,9 +47,17 @@ holds the cask and is auto-pushed by GoReleaser on every
 > **Upgrading from the old formula:** `nodeup` shipped as a Homebrew
 > formula up to v1.2.1 and switched to a cask in v1.2.2. The command
 > is unchanged (`brew install dipto0321/tap/nodeup` still works), but
-> Homebrew treats a formula and a cask as different packages — so if
-> you installed the formula, run `brew uninstall --formula nodeup`
-> after upgrading the tap.
+> Homebrew treats a formula and a cask as different packages. The tap
+> carries a `tap_migrations.json`, so **`brew update` performs the
+> hand-off for you**: it unlinks the old keg, installs the cask, and
+> tells you to run
+> `brew uninstall --formula --force nodeup` to clean up the old keg.
+> If you'd rather do it by hand:
+>
+> ```bash
+> brew uninstall --formula --force nodeup
+> brew install dipto0321/tap/nodeup
+> ```
 
 **Tradeoffs:** upgrades happen via `brew upgrade`, which all Homebrew
 users already run on a schedule. The install lives in Homebrew's
