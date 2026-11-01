@@ -39,10 +39,10 @@ manual steps, single static binary, no Node runtime dependency.
 
 ## §I Interfaces
 
-- cmd: `nodeup upgrade [--lts|--current|--dry-run|--yes|--no-migrate|--no-cleanup|--cleanup|--cleanup-version <v>|--manager <name>]`
+- cmd: `nodeup upgrade [--lts|--current|--dry-run|--yes|--no-migrate|--keep-snapshots|--no-cleanup|--cleanup|--cleanup-version <v>|--manager <name>]`
 - cmd: `nodeup check [--json]`
 - cmd: `nodeup list [--json]`
-- cmd: `nodeup packages {snapshot|restore [--from <path>]|diff}`
+- cmd: `nodeup packages {snapshot|restore [--from <path>]|diff|cleanup [--all|--reports|--list|--yes]}`
 - cmd: `nodeup config {show|get <key>|set <key> <val>|init [--force]}`
 - cmd: `nodeup version`
 - api: `GET https://nodejs.org/dist/index.json` → `Manifest ([]ManifestVersion)`
@@ -53,6 +53,7 @@ manual steps, single static binary, no Node runtime dependency.
 - file: `<DataDir>/nodeup.lock`
 - env: `NODEUP_MANAGER`, `NODEUP_TRACK_LTS`, `NODEUP_TRACK_CURRENT`,
   `NODEUP_PACKAGES_MIGRATE`, `NODEUP_PACKAGES_STRATEGY`,
+  `NODEUP_PACKAGES_KEEP_SNAPSHOTS`,
   `NODEUP_CACHE_TTL`, `NODEUP_CONFIG`, `NODEUP_HOME`
 - type: `Manager interface` → `Name() string`, `Detect() bool`,
   `Version() (string, error)`, `ListInstalled() ([]semver.Version, error)`,
@@ -98,6 +99,15 @@ manual steps, single static binary, no Node runtime dependency.
 - V21: lock file (`<DataDir>/nodeup.lock`) ! held around any critical
   section that mutates installed Node versions or the config file
   concurrently.
+- V22: snapshot lifecycle — an upgrade's snapshots are deleted ⟺ the
+  migration replayed them successfully (or `--keep-snapshots` /
+  `packages.keep_snapshots` says otherwise). A snapshot whose restore
+  failed ⊥ deleted: it is the rollback payload the sentinel points at.
+- V23: snapshot write ! atomic (temp file same dir + rename) — a
+  truncated body is invisible to every reader and would leak.
+- V24: file deletion (snapshots, reports) ! confined to its own
+  directory — the target must resolve *inside* it after symlink
+  evaluation, and must be a regular file.
 
 ## §T Tasks
 
@@ -124,6 +134,7 @@ T19|x|fix double-prompt + sticky-no-override at cleanup decision point|#76,#95
 T20|x|rest of cleanup/chore/ci/release batch|#62-#69,#89-#94,#99,#100,#107-#109
 T21|x|doc drift: CLAUDE.md ui/lipgloss/phase-table stale; SPEC §T stale|#106
 T22|x|add Vite+ (`vp`) as a supported version manager (full `vp env` surface + classifier + registry + docs)|I.managers,V14,#123,#124
+T23|x|fix snapshot leak: auto-delete upgrade snapshots after a successful migration + `nodeup packages cleanup` CLI + atomic snapshot write|V22,V23,V24,#128
 
 ## §B Bugs
 

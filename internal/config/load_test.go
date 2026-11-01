@@ -65,6 +65,11 @@ track:
 	if !cfg.Packages.Migrate {
 		t.Errorf("Packages.Migrate = false, want true (default)")
 	}
+	// packages.keep_snapshots omitted -> the default (false, i.e.
+	// snapshots are deleted after a successful migration) must survive.
+	if cfg.Packages.KeepSnapshots {
+		t.Errorf("Packages.KeepSnapshots = true, want false (default, file omitted)")
+	}
 	if cfg.Cache.TTL != 3600 {
 		t.Errorf("Cache.TTL = %d, want 3600 (default)", cfg.Cache.TTL)
 	}
@@ -83,6 +88,7 @@ packages:
   migrate: false
   strategy: latest
   skip: [yarn, pnpm]
+  keep_snapshots: true
 cleanup:
   auto: true
   prompt: false
@@ -107,6 +113,9 @@ cache:
 	}
 	if strings.Join(cfg.Packages.Skip, ",") != "yarn,pnpm" {
 		t.Errorf("Packages.Skip = %v", cfg.Packages.Skip)
+	}
+	if !cfg.Packages.KeepSnapshots {
+		t.Errorf("Packages.KeepSnapshots = false, want true (file set it)")
 	}
 	if !cfg.Cleanup.Auto || cfg.Cleanup.Prompt {
 		t.Errorf("cleanup: auto=%v prompt=%v", cfg.Cleanup.Auto, cfg.Cleanup.Prompt)

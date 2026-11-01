@@ -2,8 +2,12 @@ package cli
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/Masterminds/semver/v3"
 )
 
 // TestRunRestore_RejectsPathTraversal exercises the manager-name
@@ -88,5 +92,88 @@ func TestRunRestore_AcceptsCanonicalName(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "invalid manager name") {
 		t.Errorf("runRestore(\"fnm\"): allowlist wrongly rejected canonical name: %v", err)
+	}
+}
+
+// stubCurrentManager is a detector.Manager whose Current() answer is
+// configurable, used to pin getCurrentVersion's behavior.
+type stubCurrentManager struct {
+	name       string
+	current    semver.Version
+	currentErr error
+	installed  []semver.Version
+}
+
+func (s *stubCurrentManager) Name() string             { return s.name }
+func (s *stubCurrentManager) Detect() bool             { return true }
+func (s *stubCurrentManager) Version() (string, error) { return "0.0.0-test", nil }
+func (s *stubCurrentManager) ListInstalled(context.Context) ([]semver.Version, error) {
+	return s.installed, nil
+}
+func (s *stubCurrentManager) Install(semver.Version) error                   { return nil }
+func (s *stubCurrentManager) Uninstall(semver.Version) error                 { return nil }
+func (s *stubCurrentManager) Use(semver.Version) error                       { return nil }
+func (s *stubCurrentManager) SetDefault(semver.Version) error                { return nil }
+func (s *stubCurrentManager) GlobalNpmPrefix(semver.Version) (string, error) { return "", nil }
+func (s *stubCurrentManager) Current(context.Context) (semver.Version, error) {
+	if s.currentErr != nil {
+		return semver.Version{}, s.currentErr
+	}
+	return s.current, nil
+}
+
+// TestGetCurrentVersion_PrefersManagerCurrent pins that
+// `nodeup packages snapshot` captures the ACTIVE version's globals.
+//
+// The previous implementation returned versions[0] — the LOWEST
+// installed version, because ListInstalled sorts ascending. On a
+// machine with Node 18 and Node 20 that captured the (usually empty)
+// 18 install under the 20.x filename, producing a snapshot that was
+// useless as a restore source. See #128.
+func TestGetCurrentVersion_PrefersManagerCurrent(t *testing.T) {
+	cur := *semver.MustParse("20.10.0")
+	m := &stubCurrentManager{
+		name:      "fnm",
+		current:   cur,
+		installed: []semver.Version{*semver.MustParse("18.0.0"), cur},
+	}
+
+	got, err := getCurrentVersion(context.Background(), m)
+	if err != nil {
+		t.Fatalf("getCurrentVersion: %v", err)
+	}
+	if got.String() != "20.10.0" {
+		t.Errorf("getCurrentVersion = %s, want 20.10.0 (the active version)", got)
+	}
+}
+
+// TestGetCurrentVersion_FallsBackToHighestInstalled covers the
+// managers that cannot report an active version (nvm-windows returns
+// "not implemented"). The fallback must be the HIGHEST installed
+// version, not the lowest.
+func TestGetCurrentVersion_FallsBackToHighestInstalled(t *testing.T) {
+	m := &stubCurrentManager{
+		name:       "nvm-windows",
+		currentErr: errors.New("not implemented"),
+		installed:  []semver.Version{*semver.MustParse("18.0.0"), *semver.MustParse("20.10.0"), *semver.MustParse("22.0.0")},
+	}
+
+	got, err := getCurrentVersion(context.Background(), m)
+	if err != nil {
+		t.Fatalf("getCurrentVersion: %v", err)
+	}
+	if got.String() != "22.0.0" {
+		t.Errorf("getCurrentVersion = %s, want 22.0.0 (the highest installed version)", got)
+	}
+}
+
+// TestGetCurrentVersion_NoVersionsErrors verifies the empty case.
+func TestGetCurrentVersion_NoVersionsErrors(t *testing.T) {
+	m := &stubCurrentManager{
+		name:       "fnm",
+		currentErr: errors.New("no active version"),
+	}
+	if _, err := getCurrentVersion(context.Background(), m); err == nil {
+		t.Error("getCurrentVersion with no versions = nil error, want an error")
 	}
 }

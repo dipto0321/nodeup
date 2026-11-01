@@ -23,6 +23,7 @@ internal/cli/              cobra command wiring — thin layer, delegates to int
   root.go                  NewRootCmd; registers all subcommands
   upgrade.go               nodeup upgrade (Phase 4, merged)
   check.go / list.go / packages.go / config.go / version.go
+  cleanup_snapshots.go     nodeup packages cleanup — delete snapshot / report files
 internal/detector/         Manager interface + one file per manager
   detector.go              DetectAll(), ResolveManager()
   fnm.go nvm.go volta.go asdf.go mise.go n.go nodenv.go viteplus.go nvm_windows.go
@@ -32,6 +33,8 @@ internal/packages/         npm global snapshot / restore / migrate (merged in PR
   snapshot.go              Snapshot(ctx, managerName, version) → ~/.../snapshots/<mgr>-<ver>.json
                           Restore(ctx, managerName, version) ([]PackageResult, error)
                           RestoreFromSnapshot(ctx, path) ([]PackageResult, error)
+  cleanup.go               ListSnapshotFiles() / DeleteSnapshotFile() — file-level snapshot
+                          enumeration + safe deletion (see #128)
   report.go                MigrationReport: per-package results, Save() → ~/.../reports/migration-<ts>.json
   sentinel.go              UpgradeSentinel: in-progress marker for interrupted-upgrade replay
 internal/platform/
@@ -42,7 +45,7 @@ internal/ui/               single source of truth for user-facing output
   theme.go                 DefaultTheme — lipgloss styles for FancyWriter
   writer.go                Writer interface + PlainWriter / FancyWriter implementations
   spinner.go               bubbletea-backed braille spinner for long-running steps
-  prompt.go                huh-backed Confirm / Select helpers for interactive flows
+  prompt.go                huh-backed Confirm / Select / MultiSelect helpers for interactive flows
 ```
 
 ## Key invariants — read before writing code
