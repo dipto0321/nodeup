@@ -16,7 +16,7 @@
 #   - checksums.txt with SHA256 for every artifact (the 6th release
 #     file, but it's a checksums manifest, not a binary)
 #   - A GitHub Release titled `v<version>` with changelog and all artifacts
-#   - A homebrew formula pushed to github.com/dipto0321/homebrew-tap
+#   - A homebrew cask pushed to github.com/dipto0321/homebrew-tap
 #   - A scoop manifest pushed to github.com/dipto0321/scoop-bucket
 
 version: 2
@@ -36,7 +36,23 @@ builds:
       - CGO_ENABLED=0
     flags:
       - -trimpath
-      - -ldflags=-s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.CommitDate}}
+    # The ldflags live in the dedicated `ldflags` key, NOT in `flags`.
+    #
+    # GoReleaser has its own default ldflags (`-s -w -X main.version=... -X
+    # main.commit={{.Commit}} -X main.date={{.Date}} -X main.builtBy=goreleaser`)
+    # and it only applies them when `builds[].ldflags` is empty. Passing
+    # `-ldflags=...` through `flags` instead produced two `-ldflags`
+    # arguments on the `go build` command line — Go took the last one, so
+    # our `-X main.commit={{.ShortCommit}} -X main.date={{.CommitDate}}`
+    # was silently dropped and the shipped binary reported GoReleaser's
+    # defaults instead (a full 40-char commit and the build date rather
+    # than the commit date). GoReleaser also logs "ldflags is defined
+    # twice" to warn about exactly this.
+    #
+    # Using `ldflags:` keeps a single, explicit ldflags argument and
+    # preserves the short-commit / commit-date metadata we want.
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X main.date={{.CommitDate}}
     goos:
       - linux
       - windows
@@ -51,10 +67,16 @@ builds:
 
 archives:
   - id: default
-    format: tar.gz
+    # `formats` (plural, list form) replaced the deprecated singular
+    # `format` in GoReleaser v2.6. The archive names are unchanged —
+    # `nodeup_<version>_<os>_<arch>.tar.gz` — which is what the npm
+    # wrapper's archiveName() and the Homebrew/Scoop manifests expect.
+    formats:
+      - tar.gz
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
     files:
       - LICENSE
@@ -95,7 +117,19 @@ changelog:
       order: 999
 
 # Homebrew tap — auto-pushed on every release. Requires HOMEBREW_TAP_TOKEN.
-brews:
+#
+# GoReleaser deprecated the `brews:` (formula) section in v2.10 in favour of
+# `homebrew_casks:`. A formula's `install:` block is raw Ruby; a cask's
+# `binary:` stanza is declarative, and Homebrew now prefers casks for
+# "download a binary and put it on PATH" distributions.
+#
+# `brew install dipto0321/tap/nodeup` keeps working after the switch — we
+# verified the formula→cask transition against a scratch tap: Homebrew
+# detects the change on `brew update`, installs the cask, unlinks the old
+# keg, and tells the user to `brew uninstall --formula --force nodeup`.
+# The tap repo carries a `tap_migrations.json` mapping so Homebrew can
+# perform that hand-off automatically.
+homebrew_casks:
   - name: nodeup
     repository:
       owner: dipto0321
@@ -104,10 +138,8 @@ brews:
     homepage: 'https://github.com/dipto0321/nodeup'
     description: 'Automated Node.js version upgrade with global package migration'
     license: 'MIT'
-    install: |
-      bin.install "nodeup"
-    test: |
-      system "#{bin}/nodeup", "--version"
+    binaries:
+      - nodeup
 
 # Scoop bucket — auto-pushed on every release. Requires SCOOP_BUCKET_TOKEN.
 scoops:
