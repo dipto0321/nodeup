@@ -114,6 +114,22 @@ func snapshotPath(managerName, version string) (string, error) {
 	return filepath.Join(dir, filename), nil
 }
 
+// saveSnapshot writes the snapshot to its conventional path.
+//
+// The write is ATOMIC: we marshal to a sibling temp file and rename it
+// into place. A plain os.WriteFile truncates the destination first, so a
+// crash (or a full disk) mid-write leaves a truncated JSON file behind.
+//
+// That matters more than it looks. ListSnapshots() skips files that
+// don't parse, so a truncated snapshot is INVISIBLE to the restore
+// lookup, to `nodeup packages list`, and to the sentinel's replay path
+// — but the file still occupies disk and still shows up in the
+// file-based cleanup listing. The result is an orphan that no code path
+// can explain or remove.
+//
+// Rename within a directory is atomic on POSIX; on Windows os.Rename
+// replaces the destination. Either way a reader sees either the old
+// file or the complete new one, never a partial body. See #128.
 func saveSnapshot(s SnapshotData) error {
 	path, err := snapshotPath(s.Manager, s.NodeVersion)
 	if err != nil {
@@ -125,7 +141,17 @@ func saveSnapshot(s SnapshotData) error {
 		return fmt.Errorf("marshal snapshot: %w", err)
 	}
 
-	return os.WriteFile(path, data, 0o644)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return fmt.Errorf("write snapshot tempfile: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		// Best-effort cleanup — a leftover .tmp file is harmless, but
+		// we don't want to leak one per interrupted snapshot.
+		_ = os.Remove(tmp)
+		return fmt.Errorf("rename snapshot into place: %w", err)
+	}
+	return nil
 }
 
 // RestoreOutcome bundles the parsed snapshot metadata with the

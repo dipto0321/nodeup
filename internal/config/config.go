@@ -72,6 +72,18 @@ type PackagesConfig struct {
 	// faithful and lets `nodeup config set packages.skip ""` actually
 	// clear the list.
 	Skip []string `yaml:"skip"`
+
+	// KeepSnapshots disables the automatic deletion of the snapshot
+	// files an upgrade writes. By default nodeup deletes them once
+	// the package migration has replayed them onto the new Node
+	// version — otherwise the snapshots directory grows by one file
+	// per (manager, Node version) pair forever, with nothing ever
+	// reclaiming the space. See #128.
+	//
+	// Set this to true if you want to keep the rollback payloads
+	// around for manual replays (`nodeup packages restore <mgr>
+	// <version>`). The CLI flag --keep-snapshots overrides it.
+	KeepSnapshots bool `yaml:"keep_snapshots"`
 }
 
 // CleanupConfig controls the prompt that asks whether to remove old
@@ -179,6 +191,7 @@ func (c *Config) Validate() error {
 //	packages.migrate       bool
 //	packages.strategy      string  (exact | latest)
 //	packages.skip          []string (CSV on input, JSON list on output)
+//	packages.keep_snapshots bool
 //	cleanup.auto           bool
 //	cleanup.prompt         bool
 //	cache.ttl              int     (seconds)
@@ -232,6 +245,13 @@ func (c *Config) SetByKey(key, raw string) (bool, error) {
 			}
 		}
 		c.Packages.Skip = out
+		return true, nil
+	case "packages.keep_snapshots":
+		b, err := parseBool(raw)
+		if err != nil {
+			return true, fmt.Errorf("packages.keep_snapshots: %w", err)
+		}
+		c.Packages.KeepSnapshots = b
 		return true, nil
 	case "cleanup.auto":
 		b, err := parseBool(raw)

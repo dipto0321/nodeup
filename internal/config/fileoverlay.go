@@ -43,7 +43,8 @@ func FileOverlayFromNode(cfg *Config, root *yaml.Node) *Overlay {
 			applyTrackOverlay(o.C, valNode, &o.TrackLTSSet, &o.TrackCurrentSet)
 		case "packages":
 			applyPackagesOverlay(o.C, valNode,
-				&o.PackagesMigrateSet, &o.PackagesStrategySet, &o.PackagesSkipSet)
+				&o.PackagesMigrateSet, &o.PackagesStrategySet, &o.PackagesSkipSet,
+				&o.PackagesKeepSnapshotsSet)
 		case "cleanup":
 			applyCleanupOverlay(o.C, valNode, &o.CleanupAutoSet, &o.CleanupPromptSet)
 		case "cache":
@@ -72,7 +73,7 @@ func applyTrackOverlay(cfg *Config, node *yaml.Node, ltsSet, currentSet *bool) {
 }
 
 // applyPackagesOverlay scans a packages-mapping node.
-func applyPackagesOverlay(cfg *Config, node *yaml.Node, migrateSet, strategySet, skipSet *bool) {
+func applyPackagesOverlay(cfg *Config, node *yaml.Node, migrateSet, strategySet, skipSet, keepSnapshotsSet *bool) {
 	if node == nil || node.Kind != yaml.MappingNode {
 		return
 	}
@@ -87,6 +88,9 @@ func applyPackagesOverlay(cfg *Config, node *yaml.Node, migrateSet, strategySet,
 		case "skip":
 			*skipSet = true
 			cfg.Packages.Skip = decodeStringList(node.Content[i+1])
+		case "keep_snapshots":
+			*keepSnapshotsSet = true
+			cfg.Packages.KeepSnapshots = decodeBool(node.Content[i+1])
 		}
 	}
 }

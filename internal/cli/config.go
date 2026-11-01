@@ -83,8 +83,8 @@ to a file as a starting point for a new config.`,
 // Supported keys mirror config.SetByKey:
 //
 //	manager, track.lts, track.current, packages.migrate,
-//	packages.strategy, packages.skip, cleanup.auto,
-//	cleanup.prompt, cache.ttl
+//	packages.strategy, packages.skip, packages.keep_snapshots,
+//	cleanup.auto, cleanup.prompt, cache.ttl
 func newConfigGetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "get <key>",
@@ -248,6 +248,8 @@ func configGet(c *config.Config, key string) (string, error) {
 		return string(c.Packages.Strategy), nil
 	case "packages.skip":
 		return strings.Join(c.Packages.Skip, ","), nil
+	case "packages.keep_snapshots":
+		return boolStr(c.Packages.KeepSnapshots), nil
 	case "cleanup.auto":
 		return boolStr(c.Cleanup.Auto), nil
 	case "cleanup.prompt":
@@ -255,7 +257,7 @@ func configGet(c *config.Config, key string) (string, error) {
 	case "cache.ttl":
 		return fmt.Sprintf("%d", c.Cache.TTL), nil
 	default:
-		return "", fmt.Errorf("unknown key %q (supported: manager, track.lts, track.current, packages.migrate, packages.strategy, packages.skip, cleanup.auto, cleanup.prompt, cache.ttl)", key)
+		return "", fmt.Errorf("unknown key %q (supported: manager, track.lts, track.current, packages.migrate, packages.strategy, packages.skip, packages.keep_snapshots, cleanup.auto, cleanup.prompt, cache.ttl)", key)
 	}
 }
 

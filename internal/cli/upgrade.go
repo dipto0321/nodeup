@@ -32,6 +32,7 @@ migrate your global npm packages across automatically.`,
 	cmd.Flags().Bool("current", false, "upgrade Current only")
 	cmd.Flags().Bool("dry-run", false, "show the plan without making changes")
 	cmd.Flags().Bool("no-migrate", false, "skip global package migration")
+	cmd.Flags().Bool("keep-snapshots", false, "keep the package snapshots written during the upgrade (they are deleted once the migration succeeds)")
 	cmd.Flags().Bool("no-cleanup", false, "skip the prompt to remove old versions")
 	cmd.Flags().Bool("cleanup", false, "auto-confirm the post-upgrade cleanup of old versions")
 	cmd.Flags().StringSlice("cleanup-version", nil, "specify version(s) to delete (repeatable; pairs with --cleanup)")
@@ -47,6 +48,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	currentOnly, _ := cmd.Flags().GetBool("current")
 	dryRun, _ := cmd.Flags().GetBool("dry-run")
 	noMigrate, _ := cmd.Flags().GetBool("no-migrate")
+	keepSnapshots, _ := cmd.Flags().GetBool("keep-snapshots")
 	noCleanup, _ := cmd.Flags().GetBool("no-cleanup")
 	autoCleanup, _ := cmd.Flags().GetBool("cleanup")
 	cleanupVersionsRaw, _ := cmd.Flags().GetStringSlice("cleanup-version")
@@ -105,12 +107,61 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// remains available to retry just the failed packages.
 	sentinelArmed := false
 	restoreSucceeded := false
+
+	// snapshotPaths records every snapshot file this upgrade wrote.
+	// They are the rollback payload for the migration: once the
+	// restore has replayed them onto the new Node, they are spent
+	// and would otherwise sit on disk forever. See #128.
+	//
+	// The declaration lives here (rather than next to the snapshot
+	// loop further down) because the deferred cleanup below captures
+	// it — a variable must be in scope at the point the closure is
+	// written, not at the point it is invoked.
+	var snapshotPaths []string
+
+	// snapshotsConsumed tracks whether the snapshots this run wrote
+	// have served their purpose. It is set when either
+	//
+	//   - the migration replayed them onto the new Node version
+	//     (restoreSucceeded), or
+	//   - there was nothing to migrate at all — every target version
+	//     was already installed, so the snapshots are redundant
+	//     copies of the current state.
+	//
+	// It stays false when the migration failed or the upgrade
+	// aborted mid-flight: in those cases the snapshot is the ONLY
+	// record of what the user's globals were, and the sentinel
+	// points at it.
+	snapshotsConsumed := false
+
+	// keepSnapshots lets the user opt out of the automatic snapshot
+	// deletion. The CLI flag wins over the config file.
+	keepSnapshots = keepSnapshots || cfg.Packages.KeepSnapshots
+
 	defer func() {
 		if sentinelArmed && restoreSucceeded {
 			if err := packages.RemoveSentinel(); err != nil {
 				writerFromCmd(cmd).Warn(fmt.Sprintf("Warning: failed to remove upgrade sentinel: %v", err))
 			}
 		}
+
+		// Snapshot lifecycle. We only reclaim the snapshots once they
+		// have been consumed — see the snapshotsConsumed comment
+		// above. A snapshot whose contents were NOT replayed survives,
+		// because on the failure path it is the rollback payload the
+		// interrupted-upgrade warning points at, and the user may
+		// want to replay it by hand.
+		//
+		// Note that all the snapshots written by one upgrade hold the
+		// SAME package set: `npm ls -g` reports the active Node's
+		// globals regardless of which version we label the file with.
+		// The per-version files exist so the user can name the source
+		// version in `nodeup packages restore <mgr> <version>`, not
+		// because they carry distinct data.
+		if !snapshotsConsumed || keepSnapshots {
+			return
+		}
+		reclaimSnapshots(cmd, snapshotPaths)
 	}()
 
 	// Detect managers. ResolveManagerAuto returns
@@ -264,8 +315,9 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// version so the user can manually replay against any of them via
 	// `nodeup packages restore <mgr> <version>`, but the upgrade flow
 	// itself only replays from the latest installed version (below) —
-	// the snapshots for older installed versions remain on disk for
-	// the user's reference.
+	// the snapshots for older installed versions are there for the
+	// duration of the upgrade and are reclaimed once the migration
+	// succeeds (see the deferred cleanup above).
 	//
 	// While we're at it, resolve the conventional snapshot path for
 	// the latest installed version — this is the path both the
@@ -288,6 +340,14 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 			label := fmt.Sprintf("Snapshotting globals (%s)", ver)
 			if serr := ui.WaitWithSpinner(ctx, spinnerFor(cmd, label), take); serr != nil {
 				writerFromCmd(cmd).Warn(fmt.Sprintf("Warning: snapshot failed for %s: %v", ver, serr))
+				continue
+			}
+			// Record the path only when the snapshot actually landed
+			// on disk. A failed snapshot has nothing to reclaim, and
+			// recording it anyway would make the deferred cleanup
+			// warn about a file that was never created.
+			if p, perr := packages.SnapshotPath(m.Name(), ver.String()); perr == nil {
+				snapshotPaths = append(snapshotPaths, p)
 			}
 		}
 		if len(installedVersions) > 0 {
@@ -302,6 +362,21 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 				restoreSnapshotPath = p
 			}
 		}
+
+		// Nothing to migrate: every target version was already
+		// installed, so the upgrade has no install step and no
+		// restore step. The snapshots we just wrote are redundant
+		// copies of the current state — there's nothing they are
+		// needed for, and nothing will replay them. Mark them
+		// consumed so the deferred cleanup reclaims the space.
+		//
+		// (This is the "nodeup upgrade when you're already up to
+		// date" case. It writes N snapshot files and then does
+		// nothing with them — which is exactly how the set grew
+		// without bound.)
+		if len(toInstall) == 0 {
+			snapshotsConsumed = true
+		}
 	}
 
 	// Arm the sentinel AFTER snapshots are on disk but BEFORE any
@@ -312,11 +387,16 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// The sentinel records the snapshot path so that
 	// `nodeup packages restore --from <sentinel path>` can replay
 	// against exactly the same package set we were about to install.
-	if !skipMigrate {
-		newVersion := ""
-		if len(toInstall) > 0 {
-			newVersion = toInstall[len(toInstall)-1].String()
-		}
+	//
+	// We only arm it when there is actually something to migrate
+	// (len(toInstall) > 0). With nothing to install there is no
+	// install step, no restore step, and no restoreSucceeded — so a
+	// sentinel armed here would never be cleared by the deferred
+	// cleanup, and EVERY subsequent `nodeup` invocation would warn
+	// about a phantom "interrupted upgrade". That warning is a lie:
+	// there was no upgrade in progress. See #128.
+	if !skipMigrate && len(toInstall) > 0 {
+		newVersion := toInstall[len(toInstall)-1].String()
 		if err := packages.WriteSentinel(packages.UpgradeSentinel{
 			Manager:      m.Name(),
 			OldVersion:   oldVersion,
@@ -449,6 +529,12 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 				writerFromCmd(cmd).Warn(fmt.Sprintf("Warning: restore failed: %v", rerr))
 			} else {
 				restoreSucceeded = true
+				// The packages were replayed onto the new Node
+				// version, so the snapshot has served its purpose.
+				// The deferred cleanup reclaims it (and the
+				// per-version siblings) unless --keep-snapshots
+				// says otherwise.
+				snapshotsConsumed = true
 			}
 		}
 	}
@@ -520,6 +606,25 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 
 	writerFromCmd(cmd).Success("Upgrade complete!")
 	return nil
+}
+
+// reclaimSnapshots deletes the snapshot files an upgrade wrote once
+// they have been consumed.
+//
+// A failure to delete one file does not stop the rest — we report
+// every failure and keep going, because the alternative (aborting the
+// upgrade over a stale file) is strictly worse. The user's actual
+// goal — the upgrade — has already succeeded.
+//
+// The deletion itself is guarded by packages.DeleteSnapshotFile,
+// which refuses to remove anything that doesn't resolve inside the
+// snapshots directory. See #128.
+func reclaimSnapshots(cmd *cobra.Command, paths []string) {
+	for _, p := range paths {
+		if err := packages.DeleteSnapshotFile(p); err != nil {
+			writerFromCmd(cmd).Warn(fmt.Sprintf("Warning: failed to delete snapshot %s: %v", p, err))
+		}
+	}
 }
 
 func parseVersion(s string) (*semver.Version, error) {

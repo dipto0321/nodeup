@@ -14,7 +14,10 @@ const (
 	EnvTrackCurrent     = "NODEUP_TRACK_CURRENT"
 	EnvPackagesMigrate  = "NODEUP_PACKAGES_MIGRATE"
 	EnvPackagesStrategy = "NODEUP_PACKAGES_STRATEGY"
-	EnvCacheTTL         = "NODEUP_CACHE_TTL"
+	// EnvPackagesKeepSnapshots disables the automatic deletion of the
+	// snapshot files an upgrade writes. See #128.
+	EnvPackagesKeepSnapshots = "NODEUP_PACKAGES_KEEP_SNAPSHOTS"
+	EnvCacheTTL              = "NODEUP_CACHE_TTL"
 
 	// EnvConfig lets power users point nodeup at a different config
 	// file path entirely (e.g. for tests, or for users who keep their
@@ -84,6 +87,13 @@ func FromEnv() (*Overlay, error) {
 			})
 		}
 		out.SetPackagesStrategy(s)
+	}
+	if v, ok := os.LookupEnv(EnvPackagesKeepSnapshots); ok && v != "" {
+		b, err := parseBool(v)
+		if err != nil {
+			return nil, errEnv(EnvPackagesKeepSnapshots, err)
+		}
+		out.SetPackagesKeepSnapshots(b)
 	}
 	if v, ok := os.LookupEnv(EnvCacheTTL); ok && v != "" {
 		n, err := strconv.Atoi(v)

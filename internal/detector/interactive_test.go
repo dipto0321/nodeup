@@ -58,6 +58,9 @@ func (s *stubPrompt) Select(_ string, options []string, _ string) (string, error
 	}
 	return "", fmt.Errorf("stubPrompt: answer %q not in options %v", got, options)
 }
+func (s *stubPrompt) MultiSelect(string, []string) ([]string, error) {
+	return nil, errors.New("MultiSelect not expected in ResolveInteractive tests")
+}
 
 // --- ResolveInteractive -------------------------------------------------
 

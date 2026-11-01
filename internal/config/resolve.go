@@ -52,6 +52,9 @@ func applyOverlay(dst *Config, src *Overlay) {
 	if src.PackagesSkipSet {
 		dst.Packages.Skip = src.C.Packages.Skip
 	}
+	if src.PackagesKeepSnapshotsSet {
+		dst.Packages.KeepSnapshots = src.C.Packages.KeepSnapshots
+	}
 	if src.CleanupAutoSet {
 		dst.Cleanup.Auto = src.C.Cleanup.Auto
 	}
@@ -84,9 +87,12 @@ type Overlay struct {
 	PackagesMigrateSet  bool
 	PackagesStrategySet bool
 	PackagesSkipSet     bool
-	CleanupAutoSet      bool
-	CleanupPromptSet    bool
-	CacheTTLSet         bool
+	// PackagesKeepSnapshotsSet is true iff packages.keep_snapshots
+	// was explicitly provided in this layer.
+	PackagesKeepSnapshotsSet bool
+	CleanupAutoSet           bool
+	CleanupPromptSet         bool
+	CacheTTLSet              bool
 }
 
 // NewOverlay returns an empty Overlay (no fields set).
@@ -145,6 +151,16 @@ func (o *Overlay) SetPackagesSkip(skip []string) {
 	}
 	o.C.Packages.Skip = skip
 	o.PackagesSkipSet = true
+}
+
+// SetPackagesKeepSnapshots records an explicit packages.keep_snapshots
+// override.
+func (o *Overlay) SetPackagesKeepSnapshots(v bool) {
+	if o == nil || o.C == nil {
+		return
+	}
+	o.C.Packages.KeepSnapshots = v
+	o.PackagesKeepSnapshotsSet = true
 }
 
 // SetCleanupAuto records an explicit cleanup.auto override.

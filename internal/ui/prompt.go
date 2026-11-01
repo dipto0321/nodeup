@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/charmbracelet/huh"
 )
@@ -40,6 +43,16 @@ type Prompt interface {
 	// can decide (most call sites should treat EOF as "use the first
 	// option" or "skip the operation").
 	Select(prompt string, options []string, defaultLabel string) (string, error)
+
+	// MultiSelect asks the user to pick zero or more options from a
+	// list. Returns the labels of the selected options, in the order
+	// they appear in `options` (not the order the user picked them).
+	//
+	// EOF / an empty answer returns an empty slice and no error — the
+	// safe direction for a "which files should I delete?" question,
+	// where "nothing selected" means "delete nothing" rather than
+	// "delete everything".
+	MultiSelect(prompt string, options []string) ([]string, error)
 
 	// Mode returns the prompt's render mode.
 	Mode() Mode
@@ -215,6 +228,92 @@ func (p *plainPrompt) Select(prompt string, options []string, defaultLabel strin
 	return options[0], nil
 }
 
+// MultiSelect asks the user to pick zero or more options.
+//
+// PlainMode has no cursor to move around, so the interaction is
+// line-based: the user types a comma-separated list of option numbers
+// (or labels) and presses Enter. An empty line selects nothing.
+//
+// Examples of accepted input:
+//
+//	1,3          — pick the 1st and 3rd options
+//	1 3          — same (spaces are separators too)
+//	fn m-20      — pick by label
+//	all          — pick every option
+//	(nothing)    — pick nothing
+func (p *plainPrompt) MultiSelect(prompt string, options []string) ([]string, error) {
+	if len(options) == 0 {
+		return nil, errors.New("ui: MultiSelect called with no options")
+	}
+	if p.out != nil {
+		_, _ = fmt.Fprintf(p.out, "%s\n", prompt)
+		for i, o := range options {
+			_, _ = fmt.Fprintf(p.out, "  %d) %s\n", i+1, o)
+		}
+		_, _ = fmt.Fprintf(p.out, "Enter numbers or names separated by commas (blank = none): ")
+	}
+
+	line, ok, err := p.readLine()
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		// EOF — nothing selected.
+		return nil, nil
+	}
+
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return nil, nil
+	}
+	if normalizeAffirmative(line) == "all" {
+		return append([]string(nil), options...), nil
+	}
+
+	// Index by label for the "pick by name" path.
+	labelIndex := make(map[string]int, len(options))
+	for i, o := range options {
+		labelIndex[normalizeAffirmative(o)] = i
+	}
+
+	seen := make(map[int]bool)
+	selected := make([]int, 0, len(options))
+
+	for _, raw := range strings.FieldsFunc(line, func(r rune) bool {
+		return r == ',' || r == ' ' || r == '\t'
+	}) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		if idx, perr := strconv.Atoi(raw); perr == nil {
+			if idx >= 1 && idx <= len(options) {
+				i := idx - 1
+				if !seen[i] {
+					seen[i] = true
+					selected = append(selected, i)
+				}
+			}
+			continue
+		}
+		if i, ok := labelIndex[normalizeAffirmative(raw)]; ok {
+			if !seen[i] {
+				seen[i] = true
+				selected = append(selected, i)
+			}
+		}
+	}
+
+	// Return in the order the options were presented, not the order the
+	// user typed them — a stable, predictable result.
+	sort.Ints(selected)
+	out := make([]string, 0, len(selected))
+	for _, i := range selected {
+		out = append(out, options[i])
+	}
+	return out, nil
+}
+
 // normalizeAffirmative lowercases ASCII letters and trims spaces
 // without dragging in `strings`. Used by both Confirm and Select
 // for case-insensitive input matching.
@@ -304,4 +403,46 @@ func (p *fancyPrompt) Select(prompt string, options []string, defaultLabel strin
 		return "", fmt.Errorf("prompt: %w", err)
 	}
 	return got, nil
+}
+
+func (p *fancyPrompt) MultiSelect(prompt string, options []string) ([]string, error) {
+	if len(options) == 0 {
+		return nil, errors.New("ui: MultiSelect called with no options")
+	}
+	huhOptions := make([]huh.Option[string], len(options))
+	for i, o := range options {
+		huhOptions[i] = huh.NewOption(o, o)
+	}
+	// Start with nothing selected: a destructive multi-select should
+	// require the user to actively pick what goes.
+	var got []string
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title(prompt).
+				Options(huhOptions...).
+				Value(&got),
+		),
+	).WithInput(p.in).WithOutput(p.out)
+	if err := form.Run(); err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			// Aborting a destructive prompt means "select nothing".
+			return nil, nil
+		}
+		return nil, fmt.Errorf("prompt: %w", err)
+	}
+
+	// Return the selection in the order the options were presented, so
+	// the result doesn't depend on the order the user toggled them.
+	picked := make(map[string]bool, len(got))
+	for _, g := range got {
+		picked[g] = true
+	}
+	out := make([]string, 0, len(got))
+	for _, o := range options {
+		if picked[o] {
+			out = append(out, o)
+		}
+	}
+	return out, nil
 }

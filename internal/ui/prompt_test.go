@@ -256,3 +256,149 @@ func TestPlainPrompt_Confirm_NilOutSafe(t *testing.T) {
 		t.Errorf("Confirm with io.Discard: got false, want true")
 	}
 }
+
+// --- MultiSelect ------------------------------------------------------
+
+// TestPlainPrompt_MultiSelect_Numbers covers the PlainMode numeric
+// selection path: the user types the option numbers separated by
+// commas and/or spaces.
+func TestPlainPrompt_MultiSelect_Numbers(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{"single", "1\n", []string{"a.json"}},
+		{"comma separated", "1,3\n", []string{"a.json", "c.json"}},
+		{"space separated", "1 3\n", []string{"a.json", "c.json"}},
+		{"mixed separators", "1, 3\n", []string{"a.json", "c.json"}},
+		{"all three", "1,2,3\n", []string{"a.json", "b.json", "c.json"}},
+		{"duplicates deduped", "1,1,2\n", []string{"a.json", "b.json"}},
+		{"out of range ignored", "1,99\n", []string{"a.json"}},
+	}
+	options := []string{"a.json", "b.json", "c.json"}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := NewPrompt(PlainMode, strings.NewReader(tc.input), &bytes.Buffer{})
+			got, err := p.MultiSelect("Select:", options)
+			if err != nil {
+				t.Fatalf("err = %v", err)
+			}
+			if !equalStrings(got, tc.want) {
+				t.Errorf("MultiSelect(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestPlainPrompt_MultiSelect_Labels covers the "pick by name" path.
+func TestPlainPrompt_MultiSelect_Labels(t *testing.T) {
+	options := []string{"fnm-20.10.0.json", "fnm-22.0.0.json"}
+	p := NewPrompt(PlainMode, strings.NewReader("fnm-22.0.0.json\n"), &bytes.Buffer{})
+	got, err := p.MultiSelect("Select:", options)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !equalStrings(got, []string{"fnm-22.0.0.json"}) {
+		t.Errorf("MultiSelect by label = %v, want [fnm-22.0.0.json]", got)
+	}
+}
+
+// TestPlainPrompt_MultiSelect_All covers the "all" keyword.
+func TestPlainPrompt_MultiSelect_All(t *testing.T) {
+	options := []string{"a.json", "b.json"}
+	p := NewPrompt(PlainMode, strings.NewReader("all\n"), &bytes.Buffer{})
+	got, err := p.MultiSelect("Select:", options)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !equalStrings(got, options) {
+		t.Errorf("MultiSelect(all) = %v, want %v", got, options)
+	}
+}
+
+// TestPlainPrompt_MultiSelect_BlankSelectsNothing pins the safe
+// direction: an empty answer means "delete nothing", NOT "delete
+// everything". This is the destructive-prompt default that matters.
+func TestPlainPrompt_MultiSelect_BlankSelectsNothing(t *testing.T) {
+	options := []string{"a.json", "b.json"}
+	p := NewPrompt(PlainMode, strings.NewReader("\n"), &bytes.Buffer{})
+	got, err := p.MultiSelect("Select:", options)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("MultiSelect(blank) = %v, want nothing selected", got)
+	}
+}
+
+// TestPlainPrompt_MultiSelect_EOFSelectsNothing covers closed stdin
+// (a piped run with no input). Same safe direction as blank input.
+func TestPlainPrompt_MultiSelect_EOFSelectsNothing(t *testing.T) {
+	options := []string{"a.json", "b.json"}
+	p := NewPrompt(PlainMode, strings.NewReader(""), &bytes.Buffer{})
+	got, err := p.MultiSelect("Select:", options)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("MultiSelect(EOF) = %v, want nothing selected", got)
+	}
+}
+
+// TestPlainPrompt_MultiSelect_OrdersByPresentation pins that the
+// result follows the order the options were presented in, not the
+// order the user typed them.
+func TestPlainPrompt_MultiSelect_OrdersByPresentation(t *testing.T) {
+	options := []string{"a.json", "b.json", "c.json"}
+	p := NewPrompt(PlainMode, strings.NewReader("3,1\n"), &bytes.Buffer{})
+	got, err := p.MultiSelect("Select:", options)
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if !equalStrings(got, []string{"a.json", "c.json"}) {
+		t.Errorf("MultiSelect(3,1) = %v, want [a.json c.json] (presentation order)", got)
+	}
+}
+
+// TestPlainPrompt_MultiSelect_NoOptions verifies the empty-options
+// guard — a caller with nothing to offer should get an error rather
+// than an interactive prompt with no choices.
+func TestPlainPrompt_MultiSelect_NoOptions(t *testing.T) {
+	p := NewPrompt(PlainMode, strings.NewReader("1\n"), &bytes.Buffer{})
+	if _, err := p.MultiSelect("Select:", nil); err == nil {
+		t.Error("MultiSelect(nil options) = nil error, want an error")
+	}
+}
+
+// TestPlainPrompt_MultiSelect_RendersOptions verifies the prompt
+// actually shows the numbered list — a user can't pick by number
+// if the numbers aren't printed.
+func TestPlainPrompt_MultiSelect_RendersOptions(t *testing.T) {
+	var out bytes.Buffer
+	p := NewPrompt(PlainMode, strings.NewReader("\n"), &out)
+	if _, err := p.MultiSelect("Select files:", []string{"a.json", "b.json"}); err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	text := out.String()
+	for _, want := range []string{"1) a.json", "2) b.json"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("prompt output %q missing %q", text, want)
+		}
+	}
+}
+
+// equalStrings compares two string slices element-wise. We avoid
+// reflect.DeepEqual so a nil-vs-empty distinction doesn't turn into a
+// confusing failure message.
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

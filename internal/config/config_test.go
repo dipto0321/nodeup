@@ -18,6 +18,9 @@ func TestDefault_MatchesSpec(t *testing.T) {
 			Migrate:  true,
 			Strategy: StrategyExact,
 			Skip:     []string{"npm", "corepack", "npx"},
+			// Snapshots are deleted automatically once the migration
+			// has replayed them — see #128.
+			KeepSnapshots: false,
 		},
 		Cleanup: CleanupConfig{Auto: false, Prompt: true},
 		Cache:   CacheConfig{TTL: 3600},
@@ -75,6 +78,9 @@ func TestSetByKey(t *testing.T) {
 		{"packages.strategy", "bogus", nil, true, true},
 		{"packages.skip", "yarn,pnpm", func(c *Config) bool { return reflect.DeepEqual(c.Packages.Skip, []string{"yarn", "pnpm"}) }, false, true},
 		{"packages.skip", "", func(c *Config) bool { return c.Packages.Skip == nil }, false, true},
+		{"packages.keep_snapshots", "true", func(c *Config) bool { return c.Packages.KeepSnapshots }, false, true},
+		{"packages.keep_snapshots", "false", func(c *Config) bool { return !c.Packages.KeepSnapshots }, false, true},
+		{"packages.keep_snapshots", "yelp", nil, true, true},
 		{"cleanup.auto", "true", func(c *Config) bool { return c.Cleanup.Auto == true }, false, true},
 		{"cleanup.prompt", "no", func(c *Config) bool { return c.Cleanup.Prompt == false }, false, true},
 		{"cache.ttl", "7200", func(c *Config) bool { return c.Cache.TTL == 7200 }, false, true},

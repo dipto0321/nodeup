@@ -13,13 +13,18 @@ import (
 )
 
 // newPackagesCmd implements `nodeup packages` — manage global npm package snapshots.
-// Subcommands: snapshot, list, restore, diff.
+// Subcommands: snapshot, list, restore, diff, cleanup.
 func newPackagesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "packages",
 		Short: "Manage global npm package snapshots",
-		Long: `Manage global npm package snapshots — capture, list, restore, and
-diff the set of globally installed packages per Node.js version.`,
+		Long: `Manage global npm package snapshots — capture, list, restore, diff,
+and clean up the set of globally installed packages per Node.js version.
+
+Snapshots are written before every upgrade so the migration can be
+rolled back or replayed. They're deleted automatically once the
+migration has replayed them; the ones left behind by a failed upgrade
+are reclaimed with 'nodeup packages cleanup'.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return cmd.Help()
 		},
@@ -29,6 +34,7 @@ diff the set of globally installed packages per Node.js version.`,
 	cmd.AddCommand(newPackagesListCmd())
 	cmd.AddCommand(newRestoreCmd())
 	cmd.AddCommand(newDiffCmd())
+	cmd.AddCommand(newCleanupCmd())
 
 	return cmd
 }
@@ -61,7 +67,24 @@ func runSnapshot(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// getCurrentVersion resolves the Node version whose global npm packages
+// should be captured.
+//
+// It asks the manager for its *active* version first (Manager.Current),
+// and only falls back to the installed-version list when the manager
+// cannot report one (e.g. nvm-windows returns "not implemented").
+//
+// The previous implementation returned versions[0] — the LOWEST
+// installed version, because ListInstalled sorts ascending. That meant
+// `nodeup packages snapshot` on a machine with Node 18 and Node 20
+// captured the globals of the 18 install (usually empty) under the
+// 20.x filename, and the resulting snapshot was useless as a restore
+// source. See #128.
 func getCurrentVersion(ctx context.Context, m detector.Manager) (semver.Version, error) {
+	if cur, err := m.Current(ctx); err == nil && !cur.Equal(&semver.Version{}) {
+		return cur, nil
+	}
+
 	versions, err := m.ListInstalled(ctx)
 	if err != nil {
 		return semver.Version{}, err
@@ -69,7 +92,9 @@ func getCurrentVersion(ctx context.Context, m detector.Manager) (semver.Version,
 	if len(versions) == 0 {
 		return semver.Version{}, fmt.Errorf("no installed versions")
 	}
-	return versions[0], nil
+	// ListInstalled is sorted ascending — the highest installed
+	// version is the closest thing to "current" we have.
+	return versions[len(versions)-1], nil
 }
 
 func newPackagesListCmd() *cobra.Command {
