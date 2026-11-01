@@ -201,6 +201,29 @@ nodeup version              Print version info
 
 Run `nodeup <command> --help` for the full flag reference.
 
+### Reclaiming snapshot space
+
+`nodeup upgrade` writes a snapshot of your global npm packages before it
+migrates them, so it can roll back if something goes wrong. Once the
+migration has replayed those packages onto the new Node version, the
+snapshot has served its purpose — and nodeup deletes it automatically.
+
+Snapshots that survive a *failed* migration are deliberate: they're the
+rollback payload the interrupted-upgrade warning points at, and they stay
+on disk until you deal with them. `nodeup packages cleanup` is how you
+deal with them:
+
+```bash
+nodeup packages cleanup              # pick files to delete (multi-select)
+nodeup packages cleanup --list       # show what would be deleted, delete nothing
+nodeup packages cleanup --all --yes  # delete every snapshot, no prompt
+nodeup packages cleanup --reports    # clean up migration reports instead
+```
+
+Pass `--keep-snapshots` to `nodeup upgrade` (or set
+`packages.keep_snapshots: true` in the config) if you'd rather keep the
+rollback payloads around for manual replays.
+
 ## How it works
 
 In short:
@@ -229,6 +252,7 @@ packages:
   skip:
     - npm
     - corepack
+  keep_snapshots: false  # true = never auto-delete upgrade snapshots
 cleanup:
   auto: false
   prompt: true
@@ -252,7 +276,7 @@ v1.1.0 → v1.2.1 history.
 |---|---|---|
 | 1 — Detector engine | ✅ | 9/9 managers detected (`fnm`, `nvm`, `Volta`, `asdf`, `mise`, `n`, `nodenv`, `vite-plus`, `nvm-windows`) |
 | 2 — Node version API | ✅ | `nodeup check` + nodejs.org/dist/index.json fetch + TTL cache + HTTP retry/backoff/timeout |
-| 3 — Package snapshot/restore | ✅ | `nodeup packages {snapshot,restore,diff}` + interrupted-upgrade sentinel + MigrationReport |
+| 3 — Package snapshot/restore | ✅ | `nodeup packages {snapshot,restore,diff,cleanup}` + interrupted-upgrade sentinel + MigrationReport |
 | 4 — Upgrade command | ✅ | End-to-end `nodeup upgrade` with snapshot → install → migrate → cleanup |
 | 5 — Config subsystem | ✅ | YAML config at `~/.nodeup/config.yaml` + `config {show,get,set,init}` + env vars |
 | 6 — Cross-platform polish | ✅ | `QuotePath`, interrupted-upgrade replay, system-node classifier, lock file |

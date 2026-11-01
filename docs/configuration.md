@@ -33,6 +33,7 @@ packages:
   migrate: true
   strategy: latest
   skip: [yarn, pnpm]
+  keep_snapshots: false
 cleanup:
   auto: false
   prompt: true
@@ -64,6 +65,7 @@ leaves the previous file untouched.
 | `packages.migrate` | bool | `true` | Migrate global packages on upgrade |
 | `packages.strategy` | string | `exact` | `exact` (pin version) or `latest` (re-fetch) |
 | `packages.skip` | []string | `[npm, corepack, npx]` | Packages to never migrate |
+| `packages.keep_snapshots` | bool | `false` | Keep the package snapshots an upgrade writes. By default nodeup deletes them once the migration has replayed them onto the new Node version. Set to `true` to keep the rollback payloads for manual replays. The `--keep-snapshots` flag on `nodeup upgrade` overrides this. |
 | `cleanup.auto` | bool | `false` | Auto-remove old versions |
 | `cleanup.prompt` | bool | `true` | Ask before removing each old version |
 | `cache.ttl` | int | `3600` | Cache TTL in seconds |
