@@ -140,6 +140,30 @@ homebrew_casks:
     license: 'MIT'
     binaries:
       - nodeup
+    # Strip the macOS Gatekeeper quarantine attribute after install.
+    #
+    # Homebrew quarantines every artifact it downloads (Cask::Quarantine
+    # .cask! in Homebrew's source) and propagates the attribute to the
+    # files it extracts. nodeup ships as an unsigned Go binary, so a
+    # quarantined copy cannot be executed at all: macOS's kernel kills
+    # the process with
+    #
+    #   ASP: Security policy would not allow process: <pid>, <path>
+    #
+    # before main() ever runs — `nodeup version` just dies. Removing
+    # `com.apple.quarantine` is the remedy Homebrew's own cask guidance
+    # recommends (and what GoReleaser's cask docs point at).
+    #
+    # The hook runs `xattr -dr` on the staged path so it covers the
+    # extracted binary. `on_macos` keeps it a no-op on Linux. The `run`
+    # step is not `must_succeed`-critical: if xattr is unavailable the
+    # install should still complete rather than abort.
+    hooks:
+      post:
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}"], must_succeed: false
+          end
 
 # Scoop bucket — auto-pushed on every release. Requires SCOOP_BUCKET_TOKEN.
 scoops:

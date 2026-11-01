@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.2] - 2026-11-01
 
-A patch release that **stops the snapshot leak** and gives the user
-explicit control over whatever is left on disk.
+A patch release that **stops the snapshot leak**, gives the user
+explicit control over whatever is left on disk, and **unblocks macOS
+Gatekeeper** so the CLI actually runs after installation.
 
 Nothing in nodeup ever deleted a snapshot file. `nodeup upgrade`
 writes one snapshot of the global npm packages per installed Node
@@ -47,6 +48,42 @@ random-suffixed filenames.
   file that the snapshot lister silently skipped — an invisible
   orphan that could never be cleaned up. Writes go through a `.tmp`
   file plus a rename.
+- **macOS Gatekeeper could block `nodeup` from running at all.**
+  macOS stamps files downloaded from the internet with the
+  `com.apple.quarantine` extended attribute, and Gatekeeper refuses
+  to execute an unsigned binary that still carries it — the kernel
+  kills the process *before* `main()` ever runs:
+
+  ```
+  ASP: Security policy would not allow process: 82275, /opt/homebrew/Cellar/nodeup/1.2.1/bin/nodeup
+  ```
+
+  `nodeup` ships as an unsigned Go binary (no Apple Developer ID
+  certificate), so this was fatal for it: the command produced no
+  output and no error, it just died. Homebrew quarantines every
+  artifact it downloads and propagates the attribute to the files it
+  extracts, so `brew install dipto0321/tap/nodeup` produced a
+  `nodeup` that could not be executed.
+
+  The fix is at install time, in both download channels:
+
+  - The Homebrew cask now carries a `postflight_steps` hook that runs
+    `xattr -dr com.apple.quarantine` on the staged path, so the
+    attribute is gone before the binary is linked into the prefix.
+  - The npm wrapper's `install.js` strips the attribute from the
+    extracted binary before it is moved into place.
+
+  Both paths are best-effort — an install never fails because the
+  attribute could not be removed — and both are no-ops on platforms
+  without the attribute. The recovery command for an already-broken
+  install is `xattr -dr com.apple.quarantine "$(command -v nodeup)"`;
+  see `docs/installation.md` for the details, including the
+  `chmod u+w` variant needed when the binary is not writable.
+
+  Note that the fix **cannot** live inside the Go binary: a
+  quarantined executable is killed before its first instruction, so
+  `main()` never runs and no amount of self-repair code can strip the
+  attribute. Closes #132.
 
 ### Added
 - `nodeup packages cleanup` — delete the snapshot and migration-report

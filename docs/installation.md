@@ -140,6 +140,13 @@ reproducible across CI runs.
 script it) when you want a new version. The binary is fully
 self-contained — no runtime, no Node, no manager.
 
+**On macOS:** if you downloaded the archive through a browser, the
+extracted binary can carry the Gatekeeper quarantine attribute and
+macOS will refuse to run it. Strip it with
+`xattr -dr com.apple.quarantine nodeup` after extracting. See
+[macOS Gatekeeper](#macos-gatekeeper-security-policy-would-not-allow-process)
+for the full story.
+
 ### From source
 
 ```bash
@@ -164,6 +171,56 @@ nodeup version
 ```
 
 Should print a version, git commit, build date, and Go runtime info.
+
+## macOS Gatekeeper ("Security policy would not allow process")
+
+macOS marks files that came from the internet with an extended
+attribute called `com.apple.quarantine`. Gatekeeper then refuses to
+execute an **unsigned** binary that still carries that attribute —
+the kernel kills the process *before* `main()` ever runs, so the
+command dies with no output at all:
+
+```
+ASP: Security policy would not allow process: 82275, /opt/homebrew/Cellar/nodeup/1.2.1/bin/nodeup
+```
+
+`nodeup` ships as an unsigned Go binary (no Apple Developer ID
+certificate), so this used to hit anyone who installed it through a
+channel that let the attribute survive. As of **v1.2.2** every
+channel strips the attribute as part of the install:
+
+| Channel | How the attribute is removed |
+|---|---|
+| Homebrew | The cask's `postflight_steps` hook runs `xattr -dr com.apple.quarantine` on the staged path after install. |
+| npm wrapper | `nodeup-npm/scripts/install.js` strips the attribute from the extracted binary before it is moved into place. |
+| Scoop | Windows only — the attribute does not exist. |
+| From source | `go install` compiles locally — nothing is downloaded, so nothing is quarantined. |
+
+### If you are already stuck
+
+If `nodeup` dies silently with no output, macOS is blocking it. Strip
+the attribute by hand:
+
+```bash
+xattr -dr com.apple.quarantine "$(command -v nodeup)"
+```
+
+If that reports `Permission denied`, the file is not writable — make
+it writable first, then restore the mode:
+
+```bash
+BIN="$(command -v nodeup)"
+chmod u+w "$BIN" && xattr -d com.apple.quarantine "$BIN" && chmod 555 "$BIN"
+```
+
+Reinstalling through Homebrew or npm also fixes it, because both
+channels strip the attribute as part of the install.
+
+> **Note:** `tar` and `zip` extraction both *propagate* the quarantine
+> attribute to the files they unpack, so a browser-downloaded archive
+> can leave the extracted binary quarantined too. That is why the
+> direct-binary section above is followed by the `xattr` one-liner
+> whenever the download came through a browser.
 
 ## Picking once and sticking
 

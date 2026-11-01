@@ -451,5 +451,115 @@ test('extractTarGz_filterRejectsTraversalEntry', async function () {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
+// --- mirrored from install.js: stripQuarantine ----------------------------
+//
+// macOS Gatekeeper refuses to execute an unsigned binary that still
+// carries the `com.apple.quarantine` attribute — the kernel kills the
+// process before `main()` ever runs, so `nodeup` dies with no output.
+// install.js strips the attribute after extraction. See #18.
+//
+// The real stripQuarantine() shells out to /usr/bin/xattr. We test the
+// decision logic it implements (platform gate, probe-first, best-effort)
+// with a fake exec so the test is hermetic and runs on every platform.
+
+const QUARANTINE_ATTR = 'com.apple.quarantine';
+
+function stripQuarantineTest({ platform, exec, targetPath }) {
+  // Not macOS: nothing to do, and we must not shell out at all.
+  if (platform !== 'darwin') return false;
+
+  // Probe first. A non-zero exit means "attribute not present", which
+  // is the common case and must be a silent no-op.
+  let probe;
+  try {
+    probe = exec(['-p', QUARANTINE_ATTR, targetPath]);
+  } catch (_) {
+    return false;
+  }
+  if (!probe || probe.length === 0) return false;
+
+  // Attribute present: strip it. A failure here must NOT throw — the
+  // install has to complete either way.
+  try {
+    exec(['-dr', QUARANTINE_ATTR, targetPath]);
+  } catch (_) {
+    return false;
+  }
+  return true;
+}
+
+// stripQuarantine: on a non-darwin platform the function is a no-op and
+// never touches the filesystem.
+test('stripQuarantine_nonDarwinIsANoOp', () => {
+  let called = false;
+  const exec = () => {
+    called = true;
+    return Buffer.from('0081;abc');
+  };
+  const result = stripQuarantineTest({
+    platform: 'linux',
+    exec,
+    targetPath: '/tmp/nodeup',
+  });
+  assert.strictEqual(result, false);
+  assert.strictEqual(called, false, 'must not shell out on non-darwin');
+});
+
+// stripQuarantine: the attribute is absent (xattr exits non-zero) —
+// nothing happens and the function reports "did not strip".
+test('stripQuarantine_absentAttributeIsANoOp', () => {
+  const calls = [];
+  const exec = (args) => {
+    calls.push(args);
+    throw new Error('xattr: No such xattr: com.apple.quarantine');
+  };
+  const result = stripQuarantineTest({
+    platform: 'darwin',
+    exec,
+    targetPath: '/tmp/nodeup',
+  });
+  assert.strictEqual(result, false);
+  assert.strictEqual(calls.length, 1, 'only the probe should run');
+  assert.deepStrictEqual(calls[0], ['-p', QUARANTINE_ATTR, '/tmp/nodeup']);
+});
+
+// stripQuarantine: the attribute is present — it is removed with the
+// recursive form so nested files are covered too.
+test('stripQuarantine_presentAttributeIsStrippedRecursively', () => {
+  const calls = [];
+  const exec = (args) => {
+    calls.push(args);
+    if (args[0] === '-p') return Buffer.from('0081;5f4a;0;abc');
+    return Buffer.from('');
+  };
+  const result = stripQuarantineTest({
+    platform: 'darwin',
+    exec,
+    targetPath: '/tmp/nodeup',
+  });
+  assert.strictEqual(result, true);
+  assert.strictEqual(calls.length, 2, 'probe then strip');
+  assert.deepStrictEqual(calls[0], ['-p', QUARANTINE_ATTR, '/tmp/nodeup']);
+  assert.deepStrictEqual(calls[1], ['-dr', QUARANTINE_ATTR, '/tmp/nodeup']);
+});
+
+// stripQuarantine: if the removal fails, the install must still
+// complete — the function returns false instead of throwing.
+test('stripQuarantine_removalFailureDoesNotAbortTheInstall', () => {
+  const exec = (args) => {
+    if (args[0] === '-p') return Buffer.from('0081;abc');
+    throw new Error('xattr: Permission denied');
+  };
+  let threw = false;
+  let result = null;
+  try {
+    result = stripQuarantineTest({ platform: 'darwin', exec, targetPath: '/tmp/nodeup' });
+  } catch (e) {
+    threw = true;
+  }
+  assert.strictEqual(threw, false, 'must never throw — an install must not fail on this');
+  assert.strictEqual(result, false);
+});
+
 // Done.
 process.stdout.write(`0 issues. (${passed} tests)\n`);

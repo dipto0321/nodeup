@@ -427,6 +427,64 @@ function chmodExec(filePath) {
   fs.chmodSync(filePath, 0o755);
 }
 
+// stripQuarantine removes the macOS Gatekeeper quarantine attribute
+// (`com.apple.quarantine`) from a path, recursively.
+//
+// Why this matters: macOS marks files downloaded from the internet with
+// that attribute, and refuses to execute an unsigned binary that still
+// carries it — the kernel kills the process with
+//
+//   ASP: Security policy would not allow process: <pid>, <path>
+//
+// before `main()` ever runs, so the CLI just dies silently. nodeup
+// ships as an unsigned Go binary, so this is fatal for it.
+//
+// The npm path is normally safe (Node's `https` download does not set
+// the attribute), but it is not guaranteed: a corporate proxy, a
+// mirror, or a future change to how the archive is produced can leave
+// the attribute set. Stripping it here makes the install robust
+// regardless of how the archive arrived.
+//
+// Two macOS details:
+//
+//   - `xattr -d` refuses to modify a file that is not writable by the
+//     caller. `chmodExec()` runs first and leaves the binary at 0755
+//     (owner-writable), so the removal succeeds.
+//   - Removing the attribute from a directory does not remove it from
+//     the files inside, hence the recursive `-r`.
+//
+// Best-effort by design: any failure is reported but never aborts the
+// install. On a machine where the attribute was never set there is
+// nothing to do, and the extra work is a no-op.
+function stripQuarantine(targetPath) {
+  if (process.platform !== 'darwin') return false;
+  try {
+    // `-p` prints the value; a non-zero exit means "not present".
+    const probe = execFileSync('/usr/bin/xattr', ['-p', 'com.apple.quarantine', targetPath], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    if (!probe || probe.length === 0) return false;
+  } catch (_) {
+    // Attribute absent (or xattr unavailable) — nothing to strip.
+    return false;
+  }
+
+  try {
+    execFileSync('/usr/bin/xattr', ['-dr', 'com.apple.quarantine', targetPath], {
+      stdio: ['ignore', 'ignore', 'ignore'],
+    });
+    info(`stripped the macOS quarantine attribute from ${path.basename(targetPath)}`);
+    return true;
+  } catch (err) {
+    info(
+      `could not strip the macOS quarantine attribute from ${path.basename(targetPath)} ` +
+        `(${err.message}). If macOS blocks nodeup with "Security policy would not allow ` +
+        `process", run: xattr -dr com.apple.quarantine ${targetPath}`
+    );
+    return false;
+  }
+}
+
 // ---- main -----------------------------------------------------------------
 
 (async function main() {
@@ -501,6 +559,10 @@ function chmodExec(filePath) {
     }
     fs.renameSync(extractedPath, binaryDest);
     chmodExec(binaryDest);
+    // macOS Gatekeeper: a quarantined binary cannot be executed at all
+    // (the kernel kills it before main() runs). Remove the attribute so
+    // `nodeup` is always runnable after install.
+    stripQuarantine(binaryDest);
 
     info(`installed nodeup v${version} (${os}/${goarch}) -> ${binaryDest}`);
   } finally {
