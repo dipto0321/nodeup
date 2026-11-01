@@ -54,24 +54,39 @@ prefers casks for "download a binary and put it on PATH" distributions.
 Homebrew treats a formula and a cask of the same name as two
 different packages, so the old formula has to be removed from the tap
 by hand, and the tap needs a `tap_migrations.json` so Homebrew can
-perform the hand-off automatically on `brew update`:
+perform the hand-off automatically on `brew update`.
+
+The file is a **flat** `{old_name: new_name}` hash (not a nested
+`{"Formula": {...}}` object — Homebrew's `Tap#tap_migrations` parses
+it with `JSON.parse(...read)` and looks the name up directly):
 
 ```json
 {
-  "Formula": {
-    "nodeup": "Cask",
-    "nodeup@1.2.1": "Cask"
-  }
+  "nodeup": "nodeup"
 }
 ```
 
 - [ ] `tap_migrations.json` present in `dipto0321/homebrew-tap` with
-      the `Formula → Cask` mapping for `nodeup`
+      the flat `{"nodeup": "nodeup"}` mapping
 - [ ] The old `nodeup.rb` formula removed from the tap (GoReleaser
       pushes the cask but does not delete the formula)
+- [ ] The formula removal, the `tap_migrations.json`, and the cask all
+      land in the **same** update cycle — with the formula still
+      present, `brew install dipto0321/tap/nodeup` resolves to the
+      *formula* (Homebrew prints "Treating ... as a formula"), so the
+      cask's quarantine-stripping hook would never reach users
 - [ ] `brew install dipto0321/tap/nodeup` verified on a scratch tap
 - [ ] Existing formula installs get the hand-off on `brew update`
-      (Homebrew tells them to `brew uninstall --formula --force nodeup`)
+      (Homebrew unlinks the old keg, installs the cask, and tells the
+      user to `brew uninstall --formula --force nodeup`)
+
+> **Checksum trap.** Do not hand-edit the sha256 values in the cask
+> from a local `goreleaser --snapshot` render — Go builds are not
+> byte-reproducible, so the snapshot hashes will not match the
+> published release assets and the install fails with "Cask nodeup
+> reports different checksum". Generate the cask from the release's own
+> `checksums.txt`, or let GoReleaser push it at tag time (which is
+> what actually happens for every release after v1.2.2).
 
 ### Publishing `nodeupx` (`nodeup-npm/`) to the npm registry
 
