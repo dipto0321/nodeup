@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/Masterminds/semver/v3"
+
+	"github.com/dipto0321/nodeup/internal/platform"
 )
 
 // --- SystemNodeKind.String --------------------------------------------------
@@ -420,6 +422,7 @@ func TestManagerManagedRoots(t *testing.T) {
 	for _, v := range []string{
 		"FNM_DIR", "NVM_DIR", "VOLTA_HOME", "ASDF_DIR", "ASDF_DATA_DIR",
 		"MISE_DATA_DIR", "N_PREFIX", "NODENV_ROOT",
+		"VP_HOME", "VP_DATA_DIR", "LOCALAPPDATA",
 		"XDG_DATA_HOME",
 		"FNM_MULTISHELL_PATH", "XDG_STATE_HOME", "TMPDIR",
 	} {
@@ -430,6 +433,15 @@ func TestManagerManagedRoots(t *testing.T) {
 	// and appended unconditionally (issue #111), so every fnm case
 	// expects it as a suffix.
 	fnmStateRoot := filepath.Join("/home/tester", ".local", "state", "fnm_multishells")
+
+	// The Vite+ platform-default data dir (no VP_HOME / VP_DATA_DIR
+	// set). The legacy <home>/.vite-plus candidate only appears when
+	// the directory holds a "current" link, which /home/tester does
+	// not, so it stays out of the expectations.
+	vitePlusDefaultRoot := filepath.Join("/home/tester", ".local", "share", "vite-plus")
+	if platform.IsWindows() {
+		vitePlusDefaultRoot = filepath.Join("/home/tester", "AppData", "Local", "vite-plus", "data")
+	}
 
 	cases := []struct {
 		name        string
@@ -568,6 +580,29 @@ func TestManagerManagedRoots(t *testing.T) {
 			wantRoots:   nil,
 			wantOK:      false,
 			description: "we don't recognize the manager, so the classifier falls through to path patterns",
+		},
+		{
+			name:   "vite-plus env wins",
+			mgr:    "vite-plus",
+			envKey: "VP_HOME", envVal: "/srv/vite-plus",
+			wantRoots:   []string{"/srv/vite-plus", vitePlusDefaultRoot},
+			wantOK:      true,
+			description: "VP_HOME override, followed by the platform default candidate",
+		},
+		{
+			name:   "vite-plus data dir override",
+			mgr:    "vite-plus",
+			envKey: "VP_DATA_DIR", envVal: "/srv/vite-plus-data",
+			wantRoots:   []string{"/srv/vite-plus-data", vitePlusDefaultRoot},
+			wantOK:      true,
+			description: "VP_DATA_DIR override, followed by the platform default candidate",
+		},
+		{
+			name:        "vite-plus falls back to the platform default",
+			mgr:         "vite-plus",
+			wantRoots:   []string{vitePlusDefaultRoot},
+			wantOK:      true,
+			description: "no env → the XDG / platform data dir",
 		},
 	}
 	for _, c := range cases {

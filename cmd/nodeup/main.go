@@ -2,9 +2,10 @@
 //
 // nodeup is an automated Node.js version upgrade + global package migration
 // tool. It detects which Node.js version manager is installed (fnm, nvm,
-// Volta, asdf, mise, n, nodenv, nvm-windows), fetches the latest LTS and
-// Current versions from the nodejs.org release API, snapshots global npm
-// packages, installs the new Node versions, and migrates the packages over.
+// Volta, asdf, mise, n, nodenv, vite-plus, nvm-windows), fetches the latest
+// LTS and Current versions from the nodejs.org release API, snapshots global
+// npm packages, installs the new Node versions, and migrates the packages
+// over.
 package main
 
 import (

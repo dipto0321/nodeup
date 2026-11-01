@@ -14,6 +14,7 @@ func All() []Manager {
 		NewMise(),
 		NewN(),
 		NewNodenv(),
+		NewVitePlus(),
 		NewNVMWindows(),
 	}
 }

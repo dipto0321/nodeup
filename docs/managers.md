@@ -1,10 +1,10 @@
 # Supported Version Managers
 
-All 8 managers listed below are fully detected by `nodeup` as of v1.0.0
+All 9 managers listed below are fully detected by `nodeup` as of v1.1.0
 (macOS, Linux, and Windows where applicable). The matrix is the source of
 truth — keep it in sync with `internal/detector/registry_*.go` and the
 per-manager files (`fnm.go`, `nvm.go`, `volta.go`, `asdf.go`, `mise.go`,
-`n.go`, `nodenv.go`, `nvm_windows.go`).
+`n.go`, `nodenv.go`, `viteplus.go`, `nvm_windows.go`).
 
 nodeup auto-detects the following version managers. Detection runs in
 priority order — earlier managers win when multiple are installed.
@@ -18,6 +18,7 @@ priority order — earlier managers win when multiple are installed.
 | [mise](https://mise.jdx.dev) | macOS, Linux | `mise` on PATH, `node` plugin |
 | [n](https://github.com/tj/n) | macOS, Linux | `n` on PATH, `N_PREFIX` |
 | [nodenv](https://github.com/nodenv/nodenv) | macOS, Linux | `nodenv` on PATH, `~/.nodenv/shims` |
+| [Vite+](https://viteplus.dev) | macOS, Linux, Windows | `vp` on PATH, `VP_HOME`, `VP_DATA_DIR`, `~/.local/share/vite-plus` (macOS/Linux) / `%LOCALAPPDATA%\vite-plus\data` (Windows) |
 | [nvm-windows](https://github.com/coreybutler/nvm-windows) | Windows only | `nvm.exe` on PATH, registry entry |
 
 ## The nvm special case
@@ -45,10 +46,10 @@ nodeup upgrade --manager fnm
 ## When `node` on PATH doesn't belong to a manager
 
 nodeup's job is to swap Node versions inside a *version manager* it
-manages — `fnm`, `nvm`, `Volta`, `asdf`, `mise`, `n`, `nodenv`, or
-`nvm-windows`. If the `node` binary that lives first on your PATH
-was installed some other way, nodeup can't safely replace it: the
-other installer would just put it back on the next update.
+manages — `fnm`, `nvm`, `Volta`, `asdf`, `mise`, `n`, `nodenv`,
+`vite-plus`, or `nvm-windows`. If the `node` binary that lives first on
+your PATH was installed some other way, nodeup can't safely replace it:
+the other installer would just put it back on the next update.
 
 Both `nodeup upgrade` and `nodeup check` classify the `node` on PATH
 into one of these buckets:
@@ -147,6 +148,7 @@ Precedence (highest first):
 | **mise**       | `mise install node@<v>`      | `mise uninstall node@<v>`   | `mise current node`                 | `SetDefault` writes to `~/.config/mise/config.toml` via `mise use --global`. |
 | **n**          | `n install <v>`              | `n uninstall <v>`        | `n current` (n ≥ 8)                  | `SetDefault` is a no-op (n auto-uses the latest install). |
 | **nodenv**     | `nodenv install <v>`         | `nodenv uninstall <v>`   | `nodenv version` (treats `system` as "unknown") | SetDefault writes to `~/.nodenv/version`. |
+| **vite-plus**  | `vp env install node@<v>`    | `vp env uninstall node@<v>` | `vp env current node --json` | Uses the `node@<v>` spec form. `Current()` reports "unknown" in Vite+'s `system_first` mode — the active Node is the system install there, not a Vite+-managed runtime — so cleanup falls back to per-version confirmation. |
 | **nvm-windows**| **unsupported**              | **unsupported**          | returns `ErrNVMWindowsNotImplemented` | `nvm-windows` doesn't expose a CLI for install/uninstall — `Install`/`Uninstall`/`Use`/`SetDefault`/`GlobalNpmPrefix` all return `ErrNVMWindowsNotImplemented`; the upgrade command leaves the install list alone, and the cleanup prompt runs but each per-version attempt surfaces that sentinel. |
 
 For nvm-windows, the cleanup prompt **still runs** — it just

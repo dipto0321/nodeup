@@ -26,7 +26,7 @@ nodeup upgrade --lts
 - **nodeup version:** `nodeup version` output
 - **OS:** (e.g., macOS 14.4, Ubuntu 24.04, Windows 11)
 - **Architecture:** (e.g., arm64, x86_64)
-- **Version manager:** (fnm, nvm, Volta, asdf, mise, n, nodenv, nvm-windows)
+- **Version manager:** (fnm, nvm, Volta, asdf, mise, n, nodenv, vite-plus, nvm-windows)
 - **Manager version:** output of `fnm --version` (or equivalent)
 - **Node version(s) installed:** output of `nodeup list`
 

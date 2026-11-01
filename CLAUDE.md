@@ -25,7 +25,7 @@ internal/cli/              cobra command wiring — thin layer, delegates to int
   check.go / list.go / packages.go / config.go / version.go
 internal/detector/         Manager interface + one file per manager
   detector.go              DetectAll(), ResolveManager()
-  fnm.go nvm.go volta.go asdf.go mise.go n.go nodenv.go nvm_windows.go
+  fnm.go nvm.go volta.go asdf.go mise.go n.go nodenv.go viteplus.go nvm_windows.go
 internal/node/
   dist.go                  nodejs.org/dist/index.json client + 24h TTL cache
 internal/packages/         npm global snapshot / restore / migrate (merged in PR #19)

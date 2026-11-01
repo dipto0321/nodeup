@@ -1,5 +1,6 @@
 // Package detector discovers and abstracts Node.js version managers on the
-// user's system: fnm, nvm, Volta, asdf, mise, n, nodenv, nvm-windows.
+// user's system: fnm, nvm, Volta, asdf, mise, n, nodenv, vite-plus,
+// nvm-windows.
 //
 // The public surface is the Manager interface and the DetectAll /
 // ResolveManager helpers. Each concrete manager lives in its own file
