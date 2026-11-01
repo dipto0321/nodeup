@@ -244,9 +244,9 @@ See [`docs/configuration.md`](./docs/configuration.md) for the full schema.
 
 ## Project status
 
-Current release: **v1.1.0** (`nodeupx@1.0.1` on npm — the npm wrapper
-trails the Go binary by one publish). See `CHANGELOG.md` for the
-v1.0.0 → v1.1.0 history.
+Current release: **v1.2.0** (`nodeupx@1.2.0` on npm — the wrapper
+publishes automatically alongside the tag). See `CHANGELOG.md` for the
+v1.1.0 → v1.2.0 history.
 
 | Phase | Status | What shipped |
 |---|---|---|
@@ -257,7 +257,7 @@ v1.0.0 → v1.1.0 history.
 | 5 — Config subsystem | ✅ | YAML config at `~/.nodeup/config.yaml` + `config {show,get,set,init}` + env vars |
 | 6 — Cross-platform polish | ✅ | `QuotePath`, interrupted-upgrade replay, system-node classifier, lock file |
 | 7 — Distribution packaging | ✅ | GoReleaser + brew tap + Scoop bucket + npm wrapper (`nodeupx` via OIDC Trusted Publishing) |
-| 8 — First tagged release | ✅ | `v1.0.0` shipped (PR #35); `v1.1.0` shipped with the `internal/ui` rollout (`#117`/`#118`/`#119`) |
+| 8 — Tagged releases | ✅ | `v1.0.0` shipped (PR #35); `v1.1.0` shipped with the `internal/ui` rollout (`#117`/`#118`/`#119`); `v1.2.0` adds Vite+ support (`#124`) |
 
 **Release train:** every `v*.*.*` tag triggers GoReleaser → brew formula
 push → Scoop manifest push → `nodeupx` publish via OIDC. To ship a

@@ -133,7 +133,7 @@ orchestrator.
 | 5 — Config subsystem | Done | merged |
 | 6 — Cross-platform polish | Done | merged (interrupted-upgrade sentinel, `QuotePath`, system-node classifier) |
 | 7 — Distribution packaging | Done | GoReleaser, brew/scoop/npm wrappers all shipped (#17, #18); manual v1.0.0 npm publish (#35) bootstrapped the OIDC trust |
-| 8 — v1.0.0 → v1.1.0 releases | Done | `nodeupx@1.0.1` (and now `@1.1.0` matching the Go binary) live on npm; trusted-publisher OIDC flow active for every tag (`#109`) |
+| 8 — v1.0.0 → v1.2.0 releases | Done | `nodeupx@1.2.0` live on npm, matching the Go binary; trusted-publisher OIDC flow active for every tag (`#109`) |
 
 ## On-disk data layout
 

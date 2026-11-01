@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-11-01
+
+The headline of this release is **Vite+ support** — `nodeup` now
+recognizes [Vite+](https://viteplus.dev), VoidZero's unified
+toolchain, as a Node.js version manager. Vite+ users previously got
+"no Node.js version manager detected" from `nodeup upgrade`; PR #124
+adds a `VitePlus` manager that drives `vp env` directly, bringing the
+supported-manager count from 8 to 9.
+
+Vite+'s `vp env` subcommand exposes exactly the operations nodeup
+needs from a version manager, so the integration is complete rather
+than detection-only: `vp env list node --json` for the installed
+set, `vp env current node --json` for the active version, and
+`vp env {install,uninstall,use,default} node@<v>` for the mutations.
+The global npm prefix resolves to
+`<data>/js_runtime/node/<v>/lib/node_modules`.
+
+The data-directory resolution mirrors upstream's own chain
+(`VP_HOME` → `<home>/.vite-plus` → `VP_DATA_DIR` → the XDG/platform
+default). All candidates are returned rather than just the first hit,
+so nodeup can still find Node installs when the shell it runs in
+doesn't carry the same Vite+ environment variables that `vp` itself
+would resolve.
+
+One subtlety is worth calling out for reviewers: Vite+ can run in
+`system_first` mode, where the shims prefer the system Node over a
+managed runtime. In that mode `vp env current` reports the *system*
+version, so `Current()` returns an error instead of that version.
+nodeup treats a failed `Current()` as "active version unknown" and
+fails closed on cleanup (issue #58) rather than attributing a system
+install to the Vite+-managed set.
+
+Also included: the system-node classifier now treats
+`<data>/js_runtime/node` as manager-managed, so a Vite+-managed `node`
+on PATH no longer trips the "nodeup does not recognize this layout"
+warning.
+
+### Added
+- Vite+ (`vp`) support as a ninth version manager
+  (`internal/detector/viteplus.go`): detection (`vp` on PATH or
+  `<data>/bin/vp` on disk, no subprocess), version parsing, installed-
+  version listing, active-version query, install / uninstall / use /
+  set-default, and global npm prefix resolution. Registered in the
+  detector registry for both unix and Windows, with the per-manager
+  detection order unchanged (fnm still wins). Closes #123.
+
+### Fixed
+- The Vite+ data-dir detection branch now checks for `vp.exe` as well
+  as `vp`, so a Vite+ install whose binary isn't on PATH is detected
+  on Windows. `exec.LookPath` applies `PATHEXT` for PATH lookups,
+  but a direct filesystem stat has to apply the suffix itself.
+
 ## [1.1.0] - 2026-07-05
 
 The headline of this release is the **`internal/ui` rollout** — the
@@ -820,5 +872,7 @@ without weakening the body-length guard for hand-authored commits.
 ### Added
 - Project blueprint — internal design doc covering language choice, scope, detection engine, version resolution, package migration, architecture, CLI design, edge cases, git workflow, conventional commits, versioning, CI/CD, and distribution. (Superseded by `README.md`; the standalone doc was removed in the Unreleased section.)
 
-[Unreleased]: https://github.com/dipto0321/nodeup/compare/v0.0.0...HEAD
+[Unreleased]: https://github.com/dipto0321/nodeup/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/dipto0321/nodeup/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/dipto0321/nodeup/compare/v1.0.1...v1.1.0
 [0.0.0]: https://github.com/dipto0321/nodeup/releases/tag/v0.0.0

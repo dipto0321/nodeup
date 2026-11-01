@@ -1,9 +1,10 @@
 # SPEC — nodeup
 
 Distilled from code (README, CLAUDE.md, CONTRIBUTING.md, docs/*, and
-`internal/*` source). Last refresh: 2026-07-05 (post v1.1.0 release;
-§C/§I/§V/§T updated to match current state — `internal/ui` rollout
-complete via #117/#118/#119, #120/#121 are commitlint relaxations).
+`internal/*` source). Last refresh: 2026-11-01 (post v1.2.0 release;
+§C/§I/§V/§T updated to match current state — Vite+ support complete
+via #124, `internal/ui` rollout complete via #117/#118/#119, #120/#121
+are commitlint relaxations).
 Caveman encoding per FORMAT.md convention (not present at repo root —
 using shapes from the caveman skill).
 
@@ -122,6 +123,7 @@ T18|x|design + implement internal/ui output layer|V2,#74,#105,#117,#118,#119
 T19|x|fix double-prompt + sticky-no-override at cleanup decision point|#76,#95
 T20|x|rest of cleanup/chore/ci/release batch|#62-#69,#89-#94,#99,#100,#107-#109
 T21|x|doc drift: CLAUDE.md ui/lipgloss/phase-table stale; SPEC §T stale|#106
+T22|x|add Vite+ (`vp`) as a supported version manager (full `vp env` surface + classifier + registry + docs)|I.managers,V14,#123,#124
 
 ## §B Bugs
 
