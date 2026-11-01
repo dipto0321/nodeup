@@ -5,6 +5,71 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-11-01
+
+A patch release that **stops the snapshot leak** and gives the user
+explicit control over whatever is left on disk.
+
+Nothing in nodeup ever deleted a snapshot file. `nodeup upgrade`
+writes one snapshot of the global npm packages per installed Node
+version so the migration can be rolled back or replayed — and then
+never removed it. The set only ever grew: one file per `(manager,
+Node version)` pair the user had ever installed, plus the orphan
+left behind by an upgrade that failed partway. The migration reports
+in `<DataDir>/reports/` leaked the same way, with unbounded
+random-suffixed filenames.
+
+### Fixed
+- The upgrade flow now reclaims the snapshots it wrote, once they
+  have served their purpose. The snapshots are deleted only when the
+  migration actually replayed them onto the new Node version — or
+  when there was nothing to migrate at all, in which case they are
+  redundant copies of the current state. A snapshot whose contents
+  were **not** replayed survives, because on the failure path it is
+  the only record of the user's globals and the "interrupted upgrade"
+  warning points straight at it. Closes #128.
+- The upgrade sentinel (`<DataDir>/upgrade-in-progress.json`) was
+  armed even when there was nothing to install. `restoreSucceeded`
+  then never became true, so the sentinel was never cleared — and
+  *every* subsequent `nodeup` invocation warned about an interrupted
+  upgrade that never happened. The sentinel is now armed only when
+  there is actually something to install.
+- `nodeup packages snapshot` captured the wrong version. It returned
+  `versions[0]` — the **lowest** installed version, because
+  `ListInstalled` sorts ascending. On a machine with Node 18 and
+  Node 20 it captured the (usually empty) 18 install and filed it
+  under the 20.x filename, producing a snapshot useless as a restore
+  source. It now prefers the manager's *active* version
+  (`Manager.Current`) and falls back to the **highest** installed
+  version for managers that cannot report one (`nvm-windows` returns
+  "not implemented").
+- Snapshot writes are now atomic. A crash mid-write left a truncated
+  file that the snapshot lister silently skipped — an invisible
+  orphan that could never be cleaned up. Writes go through a `.tmp`
+  file plus a rename.
+
+### Added
+- `nodeup packages cleanup` — delete the snapshot and migration-report
+  files nodeup keeps on disk. It lists what's there (name, size, mtime)
+  and lets you pick files one by one (multi-select) or delete them all
+  at once. `--list` shows what would go without deleting anything,
+  `--reports` targets the report files instead of the snapshots, and
+  `--yes` skips the confirmation prompt (it implies `--all`).
+- `--keep-snapshots` on `nodeup upgrade`, plus the
+  `packages.keep_snapshots` config key and the
+  `NODEUP_PACKAGES_KEEP_SNAPSHOTS` environment variable, to opt out of
+  the automatic snapshot deletion.
+
+### Changed
+- The GoReleaser configuration no longer relies on deprecated keys
+  (`archives[].format` → `formats`, `brews:` → `homebrew_casks:`), and
+  the build metadata ldflags moved out of `builds[].flags` into the
+  dedicated `builds[].ldflags` key. Passing ldflags through `flags`
+  produced two `-ldflags` arguments on the `go build` command line,
+  and Go takes the last one — so our `-X main.commit=…` was silently
+  dropped and the shipped binary reported GoReleaser's defaults
+  instead. Closes #129.
+
 ## [1.2.1] - 2026-11-01
 
 A patch release that repairs the **npm install path**, which has been
@@ -909,7 +974,8 @@ without weakening the body-length guard for hand-authored commits.
 ### Added
 - Project blueprint — internal design doc covering language choice, scope, detection engine, version resolution, package migration, architecture, CLI design, edge cases, git workflow, conventional commits, versioning, CI/CD, and distribution. (Superseded by `README.md`; the standalone doc was removed in the Unreleased section.)
 
-[Unreleased]: https://github.com/dipto0321/nodeup/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/dipto0321/nodeup/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/dipto0321/nodeup/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/dipto0321/nodeup/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/dipto0321/nodeup/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/dipto0321/nodeup/compare/v1.0.1...v1.1.0

@@ -2,7 +2,7 @@
 
 All five channels below are wired up and tested. The GoReleaser config
 that produces the binary archives lives in `.goreleaser.yaml`; the
-Homebrew tap formula and Scoop bucket manifest are pushed
+Homebrew tap cask and Scoop bucket manifest are pushed
 automatically on every `v*.*.*` tag (see `.github/workflows/release.yml`).
 
 ## Supported platforms
@@ -41,8 +41,15 @@ brew install dipto0321/tap/nodeup
 Homebrew for dev tooling (`brew` is the package manager for
 command-line apps, distinct from the App Store). The tap
 [`dipto0321/homebrew-tap`](https://github.com/dipto0321/homebrew-tap)
-holds the formula and is auto-pushed by GoReleaser on every
+holds the cask and is auto-pushed by GoReleaser on every
 `v*.*.*` tag.
+
+> **Upgrading from the old formula:** `nodeup` shipped as a Homebrew
+> formula up to v1.2.1 and switched to a cask in v1.2.2. The command
+> is unchanged (`brew install dipto0321/tap/nodeup` still works), but
+> Homebrew treats a formula and a cask as different packages — so if
+> you installed the formula, run `brew uninstall --formula nodeup`
+> after upgrading the tap.
 
 **Tradeoffs:** upgrades happen via `brew upgrade`, which all Homebrew
 users already run on a schedule. The install lives in Homebrew's

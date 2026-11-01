@@ -37,11 +37,41 @@ git push origin vX.Y.Z
 
 - [ ] GitHub Release visible at /releases/tag/vX.Y.Z
 - [ ] All 5 binaries attached + checksums.txt
-- [ ] Homebrew formula pushed to `dipto0321/homebrew-tap`
+- [ ] Homebrew cask pushed to `dipto0321/homebrew-tap`
 - [ ] Scoop manifest pushed to `dipto0321/scoop-bucket`
 - [ ] `publish-npm` job green; `npm view nodeupx version` matches
       the tag (automatic via OIDC Trusted Publishing — see below;
       **manual for the very first `nodeupx` publish only**)
+
+### The formula → cask transition (one-time, v1.2.2)
+
+`nodeup` shipped as a Homebrew **formula** up to v1.2.1. GoReleaser
+deprecated `brews:` in v2.10 in favour of `homebrew_casks:`, so v1.2.2
+ships a **cask** instead — a cask's `binary:` stanza is declarative,
+while a formula's `install:` block is raw Ruby, and Homebrew now
+prefers casks for "download a binary and put it on PATH" distributions.
+
+Homebrew treats a formula and a cask of the same name as two
+different packages, so the old formula has to be removed from the tap
+by hand, and the tap needs a `tap_migrations.json` so Homebrew can
+perform the hand-off automatically on `brew update`:
+
+```json
+{
+  "Formula": {
+    "nodeup": "Cask",
+    "nodeup@1.2.1": "Cask"
+  }
+}
+```
+
+- [ ] `tap_migrations.json` present in `dipto0321/homebrew-tap` with
+      the `Formula → Cask` mapping for `nodeup`
+- [ ] The old `nodeup.rb` formula removed from the tap (GoReleaser
+      pushes the cask but does not delete the formula)
+- [ ] `brew install dipto0321/tap/nodeup` verified on a scratch tap
+- [ ] Existing formula installs get the hand-off on `brew update`
+      (Homebrew tells them to `brew uninstall --formula --force nodeup`)
 
 ### Publishing `nodeupx` (`nodeup-npm/`) to the npm registry
 
