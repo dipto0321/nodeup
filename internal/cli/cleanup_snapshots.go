@@ -79,7 +79,11 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 
 	var files []packages.SnapshotFile
 	var kind string
-	var delete func(string) error
+	// removeFile is the deletion routine for the kind we're cleaning:
+	// DeleteReportFile for reports, DeleteSnapshotFile for snapshots.
+	// (Named removeFile rather than delete, which shadows the
+	// predeclared builtin.)
+	var removeFile func(string) error
 
 	if reports {
 		kind = "migration report"
@@ -88,7 +92,7 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("list migration reports: %w", err)
 		}
 		files = f
-		delete = packages.DeleteReportFile
+		removeFile = packages.DeleteReportFile
 	} else {
 		kind = "snapshot"
 		f, err := packages.ListSnapshotFiles()
@@ -96,7 +100,7 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("list snapshots: %w", err)
 		}
 		files = f
-		delete = packages.DeleteSnapshotFile
+		removeFile = packages.DeleteSnapshotFile
 	}
 
 	if len(files) == 0 {
@@ -164,7 +168,7 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("cleanup confirmation: %w", err)
 		}
 		if !ok {
-			w.Info("Cleanup cancelled.")
+			w.Info("Cleanup canceled.")
 			return nil
 		}
 	}
@@ -174,7 +178,7 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 	var deleted int
 	var failures []string
 	for _, f := range selected {
-		if err := delete(f.Path); err != nil {
+		if err := removeFile(f.Path); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", f.Name, err))
 			continue
 		}
