@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-11-01
+
+A patch release that repairs the **npm install path**, which has been
+broken for every user since v1.1.0.
+
+`nodeup-npm/scripts/install.js` validates the redirect GitHub serves
+for release-asset downloads against a host allowlist. GitHub now
+serves release assets from `release-assets.githubusercontent.com`, but
+the allowlist only listed `objects.githubusercontent.com` — so the
+wrapper refused the redirect and `npm install -g nodeupx` aborted
+before it could fetch the binary:
+
+```
+nodeup: refusing to follow redirect from
+https://github.com/dipto0321/nodeup/releases/download/v1.2.0/checksums.txt
+to https://release-assets.githubusercontent.com/...: host
+release-assets.githubusercontent.com is not in the allowlist
+```
+
+The allowlist was introduced in #91 (`cb425a9`, 2026-07-04), when
+GitHub was still redirecting to `objects.githubusercontent.com`. The CDN
+host changed out from under the wrapper, and nothing failed loudly
+until the next install — so the breakage was silent for four months.
+
+Both hosts are GitHub-controlled, so allowing both preserves the
+security property #91 was after: an attacker still cannot redirect
+the download to a host they control.
+
+The Homebrew tap, the Scoop bucket, and direct binary downloads were
+never affected — they don't go through this redirect-validation path.
+
+### Fixed
+- `nodeup-npm/scripts/install.js`: accept
+  `release-assets.githubusercontent.com` as a release-asset redirect
+  target, alongside `objects.githubusercontent.com`. Restores
+  `npm install -g nodeupx` on every platform. Closes #126.
+
 ## [1.2.0] - 2026-11-01
 
 The headline of this release is **Vite+ support** — `nodeup` now
@@ -872,7 +909,8 @@ without weakening the body-length guard for hand-authored commits.
 ### Added
 - Project blueprint — internal design doc covering language choice, scope, detection engine, version resolution, package migration, architecture, CLI design, edge cases, git workflow, conventional commits, versioning, CI/CD, and distribution. (Superseded by `README.md`; the standalone doc was removed in the Unreleased section.)
 
-[Unreleased]: https://github.com/dipto0321/nodeup/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/dipto0321/nodeup/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/dipto0321/nodeup/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/dipto0321/nodeup/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/dipto0321/nodeup/compare/v1.0.1...v1.1.0
 [0.0.0]: https://github.com/dipto0321/nodeup/releases/tag/v0.0.0
