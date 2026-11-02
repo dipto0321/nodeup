@@ -54,14 +54,18 @@ git push origin vX.Y.Z
 The `postinstall` script is the part that actually breaks for users, so
 verify it against the **published** package, not the local checkout.
 
+Set `VERSION` to the tag you're shipping (without the `v`):
+
 ```bash
+VERSION=1.2.4
+
 # 1. Confirm the published metadata.
 npm view nodeupx version dependencies engines
-#    → version 1.2.3, dependencies { tar: '7.5.22' }, engines { node: '>=18' }
+#    → version $VERSION, dependencies { tar: '7.5.22' }, engines { node: '>=18' }
 
 # 2. Install into a scratch dir and audit.
 mkdir -p /tmp/nodeupx-check && cd /tmp/nodeupx-check && npm init -y
-npm install nodeupx@1.2.3
+npm install nodeupx@$VERSION
 npm audit          # → "found 0 vulnerabilities"
 ```
 
@@ -71,14 +75,14 @@ unless the package is approved:
 
 ```
 npm warn install-scripts 1 package had install scripts blocked because they are not covered by allowScripts:
-npm warn install-scripts   nodeupx@1.2.3 (preinstall: node scripts/check.js; postinstall: node scripts/install.js)
+npm warn install-scripts   nodeupx@1.2.4 (preinstall: node scripts/check.js; postinstall: node scripts/install.js)
 ```
 
 Approve it and re-install, then confirm the binary landed and runs:
 
 ```bash
 npm install-scripts approve nodeupx
-npm install nodeupx@1.2.3
+npm install nodeupx@$VERSION
 ls -l node_modules/nodeupx/bin/nodeup
 xattr -p com.apple.quarantine node_modules/nodeupx/bin/nodeup   # → no such xattr
 node_modules/nodeupx/bin/nodeup version

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.4] - 2026-11-02
+
 ### Fixed
 - The "Detected an interrupted upgrade" warning could fire forever,
   pointing at a file that no longer existed. The upgrade *marker*
@@ -1109,7 +1111,8 @@ without weakening the body-length guard for hand-authored commits.
 ### Added
 - Project blueprint — internal design doc covering language choice, scope, detection engine, version resolution, package migration, architecture, CLI design, edge cases, git workflow, conventional commits, versioning, CI/CD, and distribution. (Superseded by `README.md`; the standalone doc was removed in the Unreleased section.)
 
-[Unreleased]: https://github.com/dipto0321/nodeup/compare/v1.2.3...HEAD
+[Unreleased]: https://github.com/dipto0321/nodeup/compare/v1.2.4...HEAD
+[1.2.4]: https://github.com/dipto0321/nodeup/compare/v1.2.3...v1.2.4
 [1.2.3]: https://github.com/dipto0321/nodeup/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/dipto0321/nodeup/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/dipto0321/nodeup/compare/v1.2.0...v1.2.1
