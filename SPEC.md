@@ -1,10 +1,11 @@
 # SPEC — nodeup
 
 Distilled from code (README, CLAUDE.md, CONTRIBUTING.md, docs/*, and
-`internal/*` source). Last refresh: 2026-11-01 (post v1.2.2 release;
+`internal/*` source). Last refresh: 2026-11-02 (post v1.2.3 release;
 §C/§I/§V/§T updated to match current state — snapshot cleanup complete
 via #130, Vite+ support complete via #124, `internal/ui` rollout
-complete via #117/#118/#119, #120/#121 are commitlint relaxations).
+complete via #117/#118/#119, wrapper `tar` advisory fix via #136,
+#120/#121 are commitlint relaxations).
 Caveman encoding per FORMAT.md convention (not present at repo root —
 using shapes from the caveman skill).
 
