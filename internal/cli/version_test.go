@@ -129,6 +129,16 @@ func TestVersionCmd_CheckFlagIsNoOpNotError(t *testing.T) {
 // — in PlainMode that's a direct passthrough, so the strings are
 // byte-for-byte identical to the legacy test above.
 func TestVersionCmd_UsesInjectedWriter(t *testing.T) {
+	// This test builds a ROOT command, so PersistentPreRunE runs — which
+	// means it probes the real <DataDir>/upgrade-in-progress.json
+	// sentinel. Without this redirect the test would read (and, since
+	// the stale-sentinel fix, DELETE) the developer's own sentinel.
+	//
+	// That's not hypothetical: before the redirect, running the test
+	// suite wiped the real upgrade marker on this machine. Any test
+	// that constructs a root command MUST redirect the data dir.
+	redirectSentinelDataDir(t)
+
 	out := &bytes.Buffer{}
 	errOut := &bytes.Buffer{}
 

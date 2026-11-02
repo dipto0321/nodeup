@@ -50,7 +50,8 @@ manual steps, single static binary, no Node runtime dependency.
 - file: `~/.nodeup/config.yaml` (override: `$NODEUP_CONFIG`; home override: `$NODEUP_HOME`)
 - file: `<DataDir>/snapshots/<manager>-<node-version>.json`
 - file: `<DataDir>/reports/migration-<timestamp>.json` (one per upgrade, success or partial)
-- file: `<DataDir>/upgrade-in-progress.json` (sentinel)
+- file: `<DataDir>/upgrade-in-progress.json` (sentinel; cleared automatically once
+  the snapshot it points at is gone)
 - file: `<DataDir>/nodeup.lock`
 - env: `NODEUP_MANAGER`, `NODEUP_TRACK_LTS`, `NODEUP_TRACK_CURRENT`,
   `NODEUP_PACKAGES_MIGRATE`, `NODEUP_PACKAGES_STRATEGY`,
