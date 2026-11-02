@@ -80,7 +80,7 @@ holds the manifest and is auto-pushed by GoReleaser.
 **Tradeoffs:** user-level install (no admin shell), upgrades via
 `scoop update nodeup`. Same Node-decoupled shape as Homebrew.
 
-### npm wrapper (any platform with Node ≥ 14)
+### npm wrapper (any platform with Node ≥ 18)
 
 ```bash
 npm install -g nodeupx

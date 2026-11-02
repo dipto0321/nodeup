@@ -104,7 +104,7 @@ scoop install nodeup
 Best for: Windows users who already use Scoop. The manifest is
 auto-managed by GoReleaser from `scoop: {}` in `.goreleaser.yaml`.
 
-#### npm wrapper (any platform with Node ≥ 14)
+#### npm wrapper (any platform with Node ≥ 18)
 
 ```bash
 npm install -g nodeupx
@@ -115,6 +115,12 @@ the bare `nodeup` name on npmjs.com is owned by an unrelated,
 dormant 2015 package (`romanmt/nodeup` — "a simple cluster
 implementation for node"). The downloaded binary still installs
 as the `nodeup` CLI on your `$PATH`.
+
+> **npm 12+:** npm's `allowScripts` gate blocks install scripts for
+> packages that aren't on an allowlist. `nodeupx` needs its
+> `postinstall` to download the binary, so approve it once:
+> `npm install-scripts approve nodeupx && npm install -g nodeupx`.
+> See [`nodeup-npm/README.md`](./nodeup-npm/README.md#npm-12-approve-the-install-script).
 
 Best for: anyone who treats their global npm install as the source
 of truth for CLI tools — typical in JavaScript / TypeScript projects.
