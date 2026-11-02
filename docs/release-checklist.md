@@ -43,6 +43,50 @@ git push origin vX.Y.Z
       the tag (automatic via OIDC Trusted Publishing — see below;
       **manual for the very first `nodeupx` publish only**)
 
+> **npm registry propagation.** The publish job going green does not
+> mean the version is visible on npmjs.com yet — the registry takes a
+> few minutes to propagate. Poll `npm view nodeupx version` until it
+> matches the tag before you verify the install path, or you'll chase
+> a phantom failure.
+
+### Verifying the wrapper install path
+
+The `postinstall` script is the part that actually breaks for users, so
+verify it against the **published** package, not the local checkout.
+
+```bash
+# 1. Confirm the published metadata.
+npm view nodeupx version dependencies engines
+#    → version 1.2.3, dependencies { tar: '7.5.22' }, engines { node: '>=18' }
+
+# 2. Install into a scratch dir and audit.
+mkdir -p /tmp/nodeupx-check && cd /tmp/nodeupx-check && npm init -y
+npm install nodeupx@1.2.3
+npm audit          # → "found 0 vulnerabilities"
+```
+
+On **npm 12+** the install finishes with the wrapper in place but
+**no binary** — npm's `allowScripts` gate blocks the `postinstall`
+unless the package is approved:
+
+```
+npm warn install-scripts 1 package had install scripts blocked because they are not covered by allowScripts:
+npm warn install-scripts   nodeupx@1.2.3 (preinstall: node scripts/check.js; postinstall: node scripts/install.js)
+```
+
+Approve it and re-install, then confirm the binary landed and runs:
+
+```bash
+npm install-scripts approve nodeupx
+npm install nodeupx@1.2.3
+ls -l node_modules/nodeupx/bin/nodeup
+xattr -p com.apple.quarantine node_modules/nodeupx/bin/nodeup   # → no such xattr
+node_modules/nodeupx/bin/nodeup version
+```
+
+The quarantine check matters: the wrapper strips the attribute itself,
+so a binary that carries it would be killed by macOS before `main()`.
+
 ### The formula → cask transition (one-time, v1.2.2)
 
 `nodeup` shipped as a Homebrew **formula** up to v1.2.1. GoReleaser
