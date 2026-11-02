@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `docs/release-checklist.md` now documents the full verification
+  procedure for the npm wrapper's install path: the published-metadata
+  check, `npm audit` against the published package, the npm 12
+  `allowScripts` gate and its remedy, and the `xattr -p
+  com.apple.quarantine` check on the downloaded binary. Also warns
+  that the npm registry takes a few minutes to propagate, so the
+  `publish-npm` job going green does not mean the version is visible
+  on npmjs.com yet.
+
 ## [1.2.3] - 2026-11-02
 
 A wrapper-only release. The Go binary is unchanged from v1.2.2 — this
