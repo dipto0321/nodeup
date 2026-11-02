@@ -46,12 +46,18 @@ the rollback payload the "interrupted upgrade" warning points at — plus
 the ones from Node versions you have since uninstalled. This command
 lists what's on disk and lets you choose what to delete.
 
+The upgrade marker (upgrade-in-progress.json) lives outside the
+snapshots directory, so it is not listed above. A marker whose snapshot
+no longer exists is stale and is cleared automatically; use
+--stale-sentinel to clear one explicitly.
+
 Examples:
   nodeup packages cleanup              Select snapshots to delete
   nodeup packages cleanup --all        Delete every snapshot (asks first)
   nodeup packages cleanup --all --yes  Delete every snapshot, no prompt
   nodeup packages cleanup --reports    Clean up migration reports instead
-  nodeup packages cleanup --list       Show what would be deleted, delete nothing`,
+  nodeup packages cleanup --list       Show what would be deleted, delete nothing
+  nodeup packages cleanup --stale-sentinel  Clear a stale upgrade marker`,
 		RunE: runCleanup,
 	}
 
@@ -59,6 +65,7 @@ Examples:
 	cmd.Flags().Bool("reports", false, "clean up migration reports instead of snapshots")
 	cmd.Flags().Bool("list", false, "list the files that would be deleted and exit")
 	cmd.Flags().Bool("yes", false, "skip the confirmation prompt (implies --all)")
+	cmd.Flags().Bool("stale-sentinel", false, "clear a stale upgrade marker (one whose snapshot no longer exists) and exit")
 
 	return cmd
 }
@@ -70,6 +77,21 @@ func runCleanup(cmd *cobra.Command, args []string) error {
 	reports, _ := cmd.Flags().GetBool("reports")
 	listOnly, _ := cmd.Flags().GetBool("list")
 	yes, _ := cmd.Flags().GetBool("yes")
+	staleSentinel, _ := cmd.Flags().GetBool("stale-sentinel")
+
+	// --stale-sentinel is its own narrow operation: clear the upgrade
+	// marker if it's stale, and do nothing else. It exists because the
+	// sentinel lives at <DataDir>/upgrade-in-progress.json — OUTSIDE
+	// the snapshots and reports directories this command otherwise
+	// works on — so without an explicit flag there was no way for the
+	// user to dismiss a stale marker by hand.
+	//
+	// We handle it BEFORE the snapshot/report listing so it works on a
+	// machine with no snapshots at all (which is exactly the state a
+	// user hits after the snapshot was reclaimed).
+	if staleSentinel {
+		return clearStaleSentinel(w)
+	}
 
 	// --yes implies --all: an unattended run can't answer a
 	// multi-select question, so it has to mean "delete them all".
@@ -213,4 +235,48 @@ func formatBytes(n int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
+}
+
+// clearStaleSentinel implements the `--stale-sentinel` path: it removes
+// the upgrade marker IF the snapshot it points at is gone.
+//
+// We deliberately refuse to clear a LIVE sentinel. A sentinel whose
+// snapshot still exists represents a genuine interrupted migration —
+// the user's global npm packages may not have made it across to the new
+// Node version, and the marker is the only breadcrumb telling them
+// how to replay it. Wiping that on request would be data loss, not
+// cleanup.
+//
+// The compare-and-delete primitive (RemoveSentinelIfUnchanged) means we
+// cannot clobber a fresh sentinel armed by a concurrent `nodeup upgrade`
+// between our read and our delete.
+func clearStaleSentinel(w ui.Writer) error {
+	s, err := packages.OrphanedSentinel()
+	if err != nil {
+		return fmt.Errorf("read upgrade marker: %w", err)
+	}
+	if s == nil {
+		w.Info("No upgrade marker found.")
+		return nil
+	}
+
+	if packages.SentinelSnapshotExists(s) {
+		w.Warn(fmt.Sprintf("The upgrade marker still has a snapshot (%s) — that is a genuine interrupted upgrade, not stale state.", s.SnapshotPath))
+		w.Warn(fmt.Sprintf("Replay it with: `nodeup packages restore --from %s`", s.SnapshotPath))
+		return nil
+	}
+
+	removed, rerr := packages.RemoveSentinelIfUnchanged(s)
+	if rerr != nil {
+		return fmt.Errorf("clear upgrade marker: %w", rerr)
+	}
+	if !removed {
+		// The marker changed under us — a concurrent upgrade armed a
+		// fresh one. Don't touch it.
+		w.Info("The upgrade marker changed while we were reading it — left it alone.")
+		return nil
+	}
+
+	w.Success("Cleared the stale upgrade marker.")
+	return nil
 }

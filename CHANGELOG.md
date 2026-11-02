@@ -7,7 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The "Detected an interrupted upgrade" warning could fire forever,
+  pointing at a file that no longer existed. The upgrade *marker*
+  (`<DataDir>/upgrade-in-progress.json`) is deliberately left behind
+  when a migration fails, so the user can replay it — but the
+  *snapshot* it points at does not necessarily survive: v1.2.2's
+  auto-reclaim (#130) deletes it once the migration has replayed the
+  packages, and `nodeup packages cleanup` lets the user delete any
+  snapshot by hand.
+
+  When that happened the marker outlived its payload, and every
+  `nodeup` invocation printed a warning whose own recovery command was
+  guaranteed to fail:
+
+  ```
+  ⚠ Detected an interrupted upgrade (snapshot: .../fnm-26.10.0.json, started: 2026-10-22T10:28:49+06:00).
+  ⚠ To resume: `nodeup packages restore --from .../snapshots/fnm-26.10.0.json`
+  • No snapshot files found.
+  ```
+
+  The marker lives outside the snapshots directory, so
+  `nodeup packages cleanup` never touched it and the user had no way
+  to dismiss it.
+
+  The warning now validates its own advice: if the snapshot is still
+  on disk, this is a genuine interrupted upgrade and the warning and
+  resume hint are unchanged (the #46 contract — a failed restore MUST
+  leave the marker armed so the migration can be replayed). If the
+  snapshot is gone, the marker is stale; nodeup says so and clears it
+  instead of printing a hint that cannot work.
+
+  Clearing is race-safe. The marker is claimed with an atomic rename
+  before it is inspected, so a concurrent `nodeup upgrade` that arms a
+  fresh marker in the meantime can never have it deleted out from
+  under it — the fresh marker is put back untouched.
+
 ### Added
+- `nodeup packages cleanup --stale-sentinel` clears a stale upgrade
+  marker on demand. It refuses to clear a marker whose snapshot still
+  exists: that one represents a genuine interrupted migration, and
+  throwing it away would lose the only breadcrumb telling the user how
+  to replay their global npm packages.
 - `docs/release-checklist.md` now documents the full verification
   procedure for the npm wrapper's install path: the published-metadata
   check, `npm audit` against the published package, the npm 12
@@ -16,6 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that the npm registry takes a few minutes to propagate, so the
   `publish-npm` job going green does not mean the version is visible
   on npmjs.com yet.
+
+### Fixed (tests)
+- A CLI test that built a root command ran against the developer's
+  real `$HOME`, so it probed — and, after the marker fix above, could
+  delete — the real upgrade marker. The test now redirects the data
+  dir, and a new AST-based guard test fails any future test that
+  constructs a root command without doing so.
 
 ## [1.2.3] - 2026-11-02
 

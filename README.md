@@ -63,7 +63,9 @@ A few things worth knowing before you run `nodeup`:
   `~/Library/Application Support/nodeup/nodeup.lock` on macOS,
   `%APPDATA%\nodeup\nodeup.lock` on Windows). If a run crashes
   mid-upgrade, the next invocation offers to restore from the
-  snapshot written at the start.
+  snapshot written at the start. If that snapshot is later deleted,
+  the marker is cleared automatically rather than warning forever —
+  see [The interrupted-upgrade marker](#the-interrupted-upgrade-marker).
 
 ## Installation
 
@@ -229,6 +231,35 @@ nodeup packages cleanup --reports    # clean up migration reports instead
 Pass `--keep-snapshots` to `nodeup upgrade` (or set
 `packages.keep_snapshots: true` in the config) if you'd rather keep the
 rollback payloads around for manual replays.
+
+### The interrupted-upgrade marker
+
+When `nodeup upgrade` starts a migration it writes an *upgrade marker*
+(`~/.nodeup/upgrade-in-progress.json`) so an interrupted run can be
+detected and replayed. While the marker's snapshot is still on disk, every
+`nodeup` command tells you how to resume:
+
+```
+⚠ Detected an interrupted upgrade (snapshot: .../fnm-26.10.0.json, started: 2026-10-22T10:28:49+06:00).
+⚠ To resume: `nodeup packages restore --from .../fnm-26.10.0.json`
+```
+
+If the snapshot is deleted — by the auto-reclaim after a successful
+migration, or by `nodeup packages cleanup` — the marker is *stale*: there
+is nothing left to resume, and the hint it prints cannot work. nodeup
+detects that and clears the marker on the next run, so the warning stops
+rather than repeating forever.
+
+You can also clear one by hand:
+
+```bash
+nodeup packages cleanup --stale-sentinel
+```
+
+That only ever clears a **stale** marker. A marker whose snapshot still
+exists represents a genuine interrupted migration, and nodeup refuses to
+throw it away — replay it with the `nodeup packages restore --from ...`
+command the warning prints.
 
 ## How it works
 

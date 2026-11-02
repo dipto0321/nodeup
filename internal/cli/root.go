@@ -29,15 +29,76 @@ import (
 // "no sentinel" are deliberately swallowed: a corrupted sentinel file
 // is a cosmetic issue and should not prevent the user's actual command
 // from running.
+//
+// # THE SENTINEL CAN OUTLIVE ITS SNAPSHOT
+//
+// The sentinel's contract is "there is a migration you can replay; the
+// payload for it lives at SnapshotPath". That contract only holds while
+// the snapshot survives — and two things can delete it out from under
+// the sentinel: the upgrade flow's own auto-reclaim (#128) and
+// `nodeup packages cleanup`.
+//
+// When the snapshot is gone, the warning below becomes actively
+// harmful. It points at a dead file and tells the user to run a
+// command that cannot possibly succeed:
+//
+//	⚠ Detected an interrupted upgrade (snapshot: .../fnm-26.10.0.json, ...)
+//	⚠ To resume: `nodeup packages restore --from .../fnm-26.10.0.json`
+//	Error: restore failed: read snapshot ...: no such file or directory
+//
+// And since the sentinel lives at <DataDir>/upgrade-in-progress.json —
+// outside the snapshots directory — `nodeup packages cleanup` never
+// touched it, so the warning fired on every invocation forever with no
+// way to dismiss it.
+//
+// So we validate the sentinel before acting on it:
+//
+//   - Snapshot still present → genuine interrupted upgrade. Print the
+//     warning and the resume hint, exactly as before. (This is the
+//     #46 contract: a failed restore MUST leave the sentinel armed so
+//     the migration can be replayed.)
+//   - Snapshot gone → the sentinel is stale. Say so plainly, clear it,
+//     and do NOT print a resume hint that cannot work.
 func warnInterruptedUpgrade(w ui.Writer) {
 	s, err := packages.OrphanedSentinel()
 	if err != nil || s == nil {
 		return
 	}
-	w.Warn(fmt.Sprintf("Detected an interrupted upgrade (snapshot: %s, started: %s).",
-		s.SnapshotPath, s.StartedAt.Format("2006-01-02T15:04:05Z07:00")))
-	w.Warn(fmt.Sprintf("To resume: `nodeup packages restore --from %s`",
-		s.SnapshotPath))
+
+	// The snapshot is still there → this is a real interrupted upgrade.
+	// Print the resume hint. Nothing is cleared: the sentinel is the
+	// breadcrumb that lets the user replay the migration.
+	if packages.SentinelSnapshotExists(s) {
+		w.Warn(fmt.Sprintf("Detected an interrupted upgrade (snapshot: %s, started: %s).",
+			s.SnapshotPath, s.StartedAt.Format("2006-01-02T15:04:05Z07:00")))
+		w.Warn(fmt.Sprintf("To resume: `nodeup packages restore --from %s`",
+			s.SnapshotPath))
+		return
+	}
+
+	// The sentinel points at a snapshot that no longer exists. Clear it
+	// so the warning stops firing, and tell the user why.
+	//
+	// We use the compare-and-delete variant so we cannot clobber a
+	// FRESH sentinel armed by a concurrent `nodeup upgrade` between our
+	// read and our delete.
+	removed, rerr := packages.RemoveSentinelIfUnchanged(s)
+	if rerr != nil {
+		// Best-effort. A failure to remove the file is cosmetic — the
+		// user's command still runs. We stay quiet here rather than
+		// printing a second warning on top of the one below, which
+		// would be noise; the stale sentinel will be retried on the
+		// next invocation.
+		return
+	}
+	if !removed {
+		// The sentinel on disk changed since we read it — a concurrent
+		// upgrade armed a fresh one. Leave it entirely alone.
+		return
+	}
+
+	w.Warn(fmt.Sprintf("Cleared a stale upgrade marker (the snapshot it pointed at no longer exists, so there was nothing to resume). It was last used on %s.",
+		s.StartedAt.Format("2006-01-02")))
 }
 
 // NewRootCmd builds the root `nodeup` command with all subcommands attached.
