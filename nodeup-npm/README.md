@@ -38,7 +38,7 @@ on your `$PATH`, and the install log says:
 
 ```
 npm warn install-scripts 1 package had install scripts blocked because they are not covered by allowScripts:
-npm warn install-scripts   nodeupx@1.2.3 (preinstall: node scripts/check.js; postinstall: node scripts/install.js)
+npm warn install-scripts   nodeupx@1.2.4 (preinstall: node scripts/check.js; postinstall: node scripts/install.js)
 ```
 
 Approve the script and re-run the install:
