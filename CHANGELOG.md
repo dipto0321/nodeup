@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-11-02
+
+A wrapper-only release. The Go binary is unchanged from v1.2.2 — this
+version republishes the npm wrapper with the dependency fix and the
+documentation below.
+
 ### Fixed
 - The npm wrapper's `tar` dependency was pinned to `6.2.1`, which npm
   itself flags as deprecated ("Old versions of tar are not supported,
@@ -1045,7 +1051,8 @@ without weakening the body-length guard for hand-authored commits.
 ### Added
 - Project blueprint — internal design doc covering language choice, scope, detection engine, version resolution, package migration, architecture, CLI design, edge cases, git workflow, conventional commits, versioning, CI/CD, and distribution. (Superseded by `README.md`; the standalone doc was removed in the Unreleased section.)
 
-[Unreleased]: https://github.com/dipto0321/nodeup/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/dipto0321/nodeup/compare/v1.2.3...HEAD
+[1.2.3]: https://github.com/dipto0321/nodeup/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/dipto0321/nodeup/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/dipto0321/nodeup/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/dipto0321/nodeup/compare/v1.1.0...v1.2.0

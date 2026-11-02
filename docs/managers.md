@@ -1,6 +1,6 @@
 # Supported Version Managers
 
-All 9 managers listed below are fully detected by `nodeup` as of v1.2.2
+All 9 managers listed below are fully detected by `nodeup` as of v1.2.3
 (macOS, Linux, and Windows where applicable). The matrix is the source of
 truth — keep it in sync with `internal/detector/registry_*.go` and the
 per-manager files (`fnm.go`, `nvm.go`, `volta.go`, `asdf.go`, `mise.go`,
@@ -78,7 +78,7 @@ bin dir (e.g., `fnm env --use-on-cd | source`, or add
 points at a binary inside the manager's data dir, nodeup's next
 run will classify it as `manager` and proceed without warning.
 
-> _Status: Phase 7 complete. Post-upgrade cleanup prompt, per-manager native mutation commands, and full distribution packaging (GoReleaser, brew/scoop taps, npm wrapper at `nodeupx@1.2.2` via OIDC Trusted Publishing) have all shipped — see `CHANGELOG.md` for the v1.1.0 → v1.2.2 history._
+> _Status: Phase 7 complete. Post-upgrade cleanup prompt, per-manager native mutation commands, and full distribution packaging (GoReleaser, brew/scoop taps, npm wrapper at `nodeupx@1.2.3` via OIDC Trusted Publishing) have all shipped — see `CHANGELOG.md` for the v1.1.0 → v1.2.3 history._
 
 ## Post-upgrade cleanup
 
