@@ -26,6 +26,34 @@ The `postinstall` script downloads a ~6 MB static Go binary into
 `node_modules/nodeup/bin/` and symlinks it onto your global `$PATH`
 as `nodeup`. No Go toolchain, no system services.
 
+Requires **Node ≥ 18** (the `tar` dependency needs it).
+
+### npm 12+: approve the install script
+
+npm 12 added `allowScripts`, which **blocks install scripts** for
+packages that aren't on an allowlist. `nodeupx` needs its
+`postinstall` to download the binary, so on npm 12+ a fresh install
+finishes with the wrapper in place but **no binary** — `nodeup` isn't
+on your `$PATH`, and the install log says:
+
+```
+npm warn install-scripts 1 package had install scripts blocked because they are not covered by allowScripts:
+npm warn install-scripts   nodeupx@1.2.2 (preinstall: node scripts/check.js; postinstall: node scripts/install.js)
+```
+
+Approve the script and re-run the install:
+
+```bash
+npm install-scripts approve nodeupx
+npm install -g nodeupx
+```
+
+To approve it permanently, add it to your `~/.npmrc`:
+
+```ini
+allow-scripts[]=nodeupx
+```
+
 ## Who should use this wrapper
 
 **Pick the npm wrapper if you already live inside Node and want a

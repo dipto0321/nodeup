@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- The npm wrapper's `tar` dependency was pinned to `6.2.1`, which npm
+  itself flags as deprecated ("Old versions of tar are not supported,
+  and contain widely publicized security vulnerabilities"). `npm audit`
+  against the published wrapper reports **1 critical and 1 high**
+  vulnerability, all of them in `tar` — the hardlink-path-traversal,
+  symlink-poisoning, and file-smuggling advisories that apply to the
+  archive-extraction path the wrapper uses to unpack the release
+  tarball.
+
+  Bumped to `tar@7.5.22`, which is past the advisory range
+  (`<=7.5.20`). `npm audit` is now clean: **0 vulnerabilities**.
+
+  The bump raises the wrapper's Node floor from 14 to 18, because
+  `tar@7` declares `engines: { node: ">=18" }`. The wrapper's own
+  code is unchanged and still runs on Node 14 — the floor comes from
+  the dependency.
+
+  Verified end-to-end: the wrapper's `extractTarGz` path (with its
+  zip-slip `filter` guard) extracts the real v1.2.2 release archive
+  correctly under `tar@7`, producing the binary at the expected size.
+
+### Added
+- The npm wrapper README (and the main README / installation docs) now
+  explain npm 12's `allowScripts` gate. npm 12 **blocks install
+  scripts** for packages that aren't on an allowlist, and `nodeupx`
+  needs its `postinstall` to download the binary — so on npm 12+ a
+  fresh `npm install -g nodeupx` finishes with the wrapper in place
+  but **no binary** and `nodeup` missing from `$PATH`. The fix is
+  `npm install-scripts approve nodeupx`, which the docs now spell
+  out.
+
 ## [1.2.2] - 2026-11-01
 
 A patch release that **stops the snapshot leak**, gives the user

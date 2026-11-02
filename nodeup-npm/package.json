@@ -24,7 +24,7 @@
     "cli"
   ],
   "engines": {
-    "node": ">=14"
+    "node": ">=18"
   },
   "bin": {
     "nodeup": "bin/nodeup"
@@ -34,7 +34,7 @@
     "preinstall": "node scripts/check.js"
   },
   "dependencies": {
-    "tar": "^6.2.1"
+    "tar": "7.5.22"
   },
   "files": [
     "scripts/install.js",
